@@ -69,6 +69,16 @@ logs, 200 000 events per log, 200 MB per export batch. ZIP64 and CRC mismatches
 are refused; one corrupt inner package fails alone. Only one import runs at a
 time (a second answers `409`). Both operations can be cancelled.
 
+## Tests
+
+```sh
+node test/run.mjs
+```
+
+No network, no browser, no DSH: the suite builds real ZIP archives in memory
+and checks the Host half against honest input, a decompression bomb, a bad
+CRC, a truncated archive, duplicate imports, subagent depth, and attachment
+fallback.
 ## License
 
 MIT.
