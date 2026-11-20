@@ -39,7 +39,7 @@ const MAX_REMEMBERED_ARCHIVES = 500
 const MAX_SESSIONS = 500
 
 /** Most events one Session log may carry. */
-const MAX_EVENTS = 200000
+const MAX_EVENTS = 500000
 
 /** Most events one persistence append writes. */
 const APPEND_BATCH = 200
