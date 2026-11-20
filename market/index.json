@@ -54,7 +54,7 @@
                                              "source":  {
                                                             "type":  "git",
                                                             "url":  "https://gitee.com/lirenmelodic-resonance/dsh-export-center",
-                                                            "commit":  "PENDING_GITEE_COMMIT"
+                                                            "commit":  "c152587c8b487da948b48329e19f335ce90b94ef"
                                                         },
                                              "engines":  {
                                                              "dsh":  "\u003e=0.2.2-rc.5 \u003c0.3.0"
