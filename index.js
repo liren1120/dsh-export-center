@@ -15,7 +15,7 @@
  * deliberately declares no dependency.
  */
 import { randomUUID } from 'node:crypto'
-import { Unzip, UnzipInflate, UnzipPassThrough } from 'fflate'
+import { Unzip, UnzipInflate, UnzipPassThrough } from './vendor/fflate.mjs'
 
 /** Absolute path of the archive upload route. */
 const IMPORT_PATH = '/api/export-center.import'
