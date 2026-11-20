@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Export center",
+    "description": "A sidebar panel that batch-exports the Sessions you pick as restorable archives — with attachments and subagents — and restores them as separate Sessions on another machine; the plugin inventory moves the same way.",
+    "detail": "docs/DETAIL.md"
+  }
+}
