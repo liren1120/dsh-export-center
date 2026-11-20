@@ -65,9 +65,11 @@ would exceed it stops at the budget and reports the Sessions it left out.
 - Only one import runs at a time: a second upload while one is running answers
   `409`. Both operations can be cancelled from the panel; a cancelled import
   keeps the Sessions it already wrote.
-- Archive limits: 256 MB uploaded, 64 MB declared per entry, 512 MB inflated
-  per archive, 500 Session logs, 200 000 events per log. ZIP64 and CRC mismatches
-  are refused; a corrupt inner package fails alone.
+- Archive limits: 256 MB uploaded, 64 MB per produced entry, 512 MB inflated
+  per archive, 500 Session logs, 200 000 events per log. Entries are read by
+  `fflate` on a streaming basis; a CRC mismatch, a damaged central directory, or
+  an over-limit entry fails only that package. Archives without a readable
+  central directory are refused, so ZIP64 archives are not accepted.
 - A Session whose log write fails after its header was stored is reported with
   its residual id. The persistence API offers no deletion, so the leftover must
   be removed by hand.
