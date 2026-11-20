@@ -1,39 +1,74 @@
-# dsh-export-center
+# Export center
 
-#### 介绍
-{**以下是 Gitee 平台说明，您可以替换此简介**
-Gitee 是 OSCHINA 推出的基于 Git 的代码托管平台（同时支持 SVN）。专为开发者提供稳定、高效、安全的云端软件开发协作平台
-无论是个人、团队、或是企业，都能够用 Gitee 实现代码托管、项目管理、协作开发。企业项目请看 [https://gitee.com/enterprises](https://gitee.com/enterprises)}
+A DeepSeek Harness plugin that moves work between machines: batch-export the
+Sessions you pick as restorable archives — logs, subagent sessions, and
+attachments — and restore them as separate Sessions on another machine. The
+plugin inventory travels the same way, so a hand-built environment can be
+reproduced.
 
-#### 软件架构
-软件架构说明
+中文说明见 [docs/DETAIL.md](docs/DETAIL.md)。
 
+## What it does
 
-#### 安装教程
+- **Session archives.** Pick Sessions individually or by date; each one is read
+  through the official `api/session.export` route, so the archive carries the
+  canonical `session.v4.jsonl` log, its subagent logs, and every referenced
+  attachment. The browser wraps them in one container ZIP with a localized
+  `README.md` and `manifest.json`.
+- **Restore.** Import that container on any machine: the Host half writes each
+  log as a new Session with its original creation time and event times,
+  re-saves attachments under their content-addressed ids, rebuilds subagent
+  children, and attaches the roots to the Workspace you choose.
+- **Plugin inventory.** Export the installed profile bundles as a slim manifest
+  (`name`, `version`, `spec`, `sourceKind`, `enabled`) and restore it elsewhere:
+  the panel shows the exact spec it will install, and switches on a bundle that
+  exists but is disabled.
+- **Localized exports.** File names, the archive README, and the manifest
+  `about` follow the active interface language. Session content is never
+  translated.
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+## Requirements
 
-#### 使用说明
+- DeepSeek Harness `>=0.2.2-rc.5 <0.3.0`.
+- The official Session-log export row (`@deepseek-ai/dsh-session-log-export`),
+  which the shipped Web bundle mounts.
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+## Install
 
-#### 参与贡献
+From the marketplace: add the index URL that lists this plugin, then install
+from Discover.
 
-1.  Fork 本仓库
-2.  新建 Feat_xxx 分支
-3.  提交代码
-4.  新建 Pull Request
+From a checkout:
 
+```
+dsh plugin --profile <name> add <absolute path to this directory>
+```
 
-#### 特技
+Then add the bundle `dsh-export-center` to the profile's `dsh.profile.bundles`
+(or enable it on the Plugins page) and restart DSH.
 
-1.  使用 Readme\_XXX.md 来支持不同的语言，例如 Readme\_en.md, Readme\_zh.md
-2.  Gitee 官方博客 [blog.gitee.com](https://blog.gitee.com)
-3.  你可以 [https://gitee.com/explore](https://gitee.com/explore) 这个地址来了解 Gitee 上的优秀开源项目
-4.  [GVP](https://gitee.com/gvp) 全称是 Gitee 最有价值开源项目，是综合评定出的优秀开源项目
-5.  Gitee 官方提供的使用手册 [https://gitee.com/help](https://gitee.com/help)
-6.  Gitee 封面人物是一档用来展示 Gitee 会员风采的栏目 [https://gitee.com/gitee-stars/](https://gitee.com/gitee-stars/)
+## What it writes
+
+- New Session logs through `sessionPersistence` (never edits existing ones).
+- Attachments through the attachment store (content-addressed ids).
+- Workspace membership for the restored roots.
+- Nothing else: no settings, no credentials, no telemetry, no network calls
+  besides the Host routes this plugin serves.
+
+## Data format
+
+Container ZIP: `manifest.json`, `README.md`, `sessions/<sessionId>.zip`. Each
+inner ZIP is the official archive for one Session. The manifest is schema 2 and
+carries `tool`, `app`, `locale`, `exportedAt` with a UTC offset, `timeZone`,
+`counts`, `packagesDigest`, `about`, and one entry per Session.
+
+## Limits
+
+256 MB upload, 64 MB per archive entry, 512 MB inflated per import, 500 Session
+logs, 200 000 events per log, 200 MB per export batch. ZIP64 and CRC mismatches
+are refused; one corrupt inner package fails alone. Only one import runs at a
+time (a second answers `409`). Both operations can be cancelled.
+
+## License
+
+MIT.
