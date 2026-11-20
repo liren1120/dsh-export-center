@@ -21,7 +21,7 @@
                  },
     "plugins":  [
                     {
-                        "name":  "dsh-export-center",
+                        "name":  "dsh-export-center-plugin",
                         "title":  {
                                       "en":  "Export center",
                                       "zh":  "导出中心"
