@@ -6,8 +6,8 @@ Archive reading moves to a maintained library.
 
 - **`fflate` reads archives.** The hand-written ZIP parser is gone: fflate
   streams each entry (including data descriptors) and reports structural errors
-  per entry. The dependency is declared in `package.json` and installed with the
-  plugin.
+  per entry. It is vendored under `vendor/` (MIT, licence included) so a
+  local-directory install needs no registry access.
 - **The limits and checks survive the swap.** A per-entry 64 MB cap, a 512 MB
   cumulative budget, and ZIP64/central-directory validation are enforced on the
   produced bytes; CRC-32 is still verified, from the central directory, because
