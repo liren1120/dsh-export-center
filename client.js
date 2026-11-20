@@ -32,7 +32,7 @@ window.__ModuleLoader__.load({
      * release. The served bundle is the only file the Host guarantees it can
      * reach, so the version travels inside it rather than in a side asset.
      */
-    const BUILD_VERSION = '0.5.0'
+    const BUILD_VERSION = '0.6.0'
 
     const zh = {
       panel: '导出中心',
@@ -71,6 +71,17 @@ window.__ModuleLoader__.load({
       sessionsExport: '导出会话包',
       sessionsImport: '导入会话包',
       archiveHint: '已保存：',
+      encryptPlaceholder: '加密密码（可选，留空则不加密）',
+      encryptHint: '填写密码后导出为 .dshbak 加密包，导入时需要同一密码',
+      passwordTitle: '这个归档已加密，请输入密码',
+      passwordConfirm: '解密并导入',
+      passwordCancel: '取消',
+      wrongPassword: '密码错误或文件已损坏',
+      encryptedDone: '已加密导出',
+      incremental: '只导新增',
+      incrementalHint: '仅导出上次导出之后有更新的会话',
+      incrementalNone: '没有比上次导出更新的会话',
+      lastExportAt: '上次导出',
       archiveTooLarge: '会话包超过 200 MB 上限，请分批导出',
       archivePickHint: '选择导出中心生成的 .zip 会话包，在本机恢复为独立会话',
       restored: '已恢复',
@@ -195,6 +206,17 @@ window.__ModuleLoader__.load({
       sessionsExport: 'Export sessions',
       sessionsImport: 'Import sessions',
       archiveHint: 'saved as:',
+      encryptPlaceholder: 'Encryption password (optional)',
+      encryptHint: 'With a password the export becomes an encrypted .dshbak package; the same password is needed to import it',
+      passwordTitle: 'This archive is encrypted; enter its password',
+      passwordConfirm: 'Decrypt and import',
+      passwordCancel: 'Cancel',
+      wrongPassword: 'Wrong password or damaged archive',
+      encryptedDone: 'encrypted',
+      incremental: 'New only',
+      incrementalHint: 'Export only Sessions updated since the last export',
+      incrementalNone: 'No Session was updated since the last export',
+      lastExportAt: 'last export',
       archiveTooLarge: 'the archive exceeds the 200 MB limit; export in smaller batches',
       archivePickHint: 'Choose a .zip session package written by the export center to restore its Sessions here',
       restored: 'Restored',
@@ -512,6 +534,53 @@ window.__ModuleLoader__.load({
       const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))
       return Array.from(digest, (value) => value.toString(16).padStart(2, '0')).join('')
     }
+    /** Magic prefix of an encrypted archive. */
+    const ENCRYPTION_MAGIC = new TextEncoder().encode('DSHENC1')
+    const ENCRYPTION_ITERATIONS = 210000
+
+    /** Whether these bytes start an encrypted archive. */
+    function isEncryptedArchive(bytes) {
+      if (bytes.length < ENCRYPTION_MAGIC.length + 28) return false
+      for (let index = 0; index < ENCRYPTION_MAGIC.length; index += 1) {
+        if (bytes[index] !== ENCRYPTION_MAGIC[index]) return false
+      }
+      return true
+    }
+
+    /** Derive the AES-GCM key of one passphrase and salt. */
+    async function deriveArchiveKey(password, salt) {
+      if (typeof crypto === 'undefined' || crypto.subtle === undefined) throw new Error('WebCrypto unavailable')
+      const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey'])
+      return crypto.subtle.deriveKey(
+        { name: 'PBKDF2', salt, iterations: ENCRYPTION_ITERATIONS, hash: 'SHA-256' },
+        material,
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt'],
+      )
+    }
+
+    /** Encrypt one archive: magic | salt | iv | ciphertext. */
+    async function encryptArchive(bytes, password) {
+      const salt = crypto.getRandomValues(new Uint8Array(16))
+      const iv = crypto.getRandomValues(new Uint8Array(12))
+      const key = await deriveArchiveKey(password, salt)
+      const cipher = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, bytes))
+      return joinBytes([ENCRYPTION_MAGIC, salt, iv, cipher])
+    }
+
+    /** Decrypt one encrypted archive. */
+    async function decryptArchive(bytes, password) {
+      const salt = bytes.subarray(ENCRYPTION_MAGIC.length, ENCRYPTION_MAGIC.length + 16)
+      const iv = bytes.subarray(ENCRYPTION_MAGIC.length + 16, ENCRYPTION_MAGIC.length + 28)
+      const cipher = bytes.subarray(ENCRYPTION_MAGIC.length + 28)
+      const key = await deriveArchiveKey(password, salt)
+      try {
+        return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, cipher))
+      } catch (error) {
+        throw new Error('wrong password or damaged archive')
+      }
+    }
 
     /**
      * Human-readable README placed inside a Session archive.
@@ -764,6 +833,17 @@ window.__ModuleLoader__.load({
         const [sessionBusy, setSessionBusy] = React.useState(null)
         const [sessionMessage, setSessionMessage] = React.useState(null)
         const [restoreReport, setRestoreReport] = React.useState(null)
+        const [encryptPassword, setEncryptPassword] = React.useState('')
+        const [incremental, setIncremental] = React.useState(false)
+        const [lastExportAt, setLastExportAt] = React.useState(() => {
+          try {
+            return Number(window.localStorage.getItem('dsh-export-center:last-export') || 0)
+          } catch (error) {
+            return 0
+          }
+        })
+        const [pendingEncrypted, setPendingEncrypted] = React.useState(null)
+        const [pendingPassword, setPendingPassword] = React.useState('')
         const [hostReady, setHostReady] = React.useState(true)
         const [authIssue, setAuthIssue] = React.useState(false)
         const [showAllFailures, setShowAllFailures] = React.useState(false)
@@ -1215,15 +1295,39 @@ window.__ModuleLoader__.load({
             ['README.md', encoder.encode(readme)],
             ...packages.map((entry) => [`sessions/${entry.id}.zip`, entry.data]),
           ])
+          let payload = archive
+          let extension = 'zip'
+          let encrypted = false
+          if (encryptPassword !== '') {
+            try {
+              payload = await encryptArchive(archive, encryptPassword)
+              extension = 'dshbak'
+              encrypted = true
+            } catch (failure) {
+              setSessionBusy(null)
+              setSessionMessage({
+                kind: 'error',
+                text: `${t('error')}: ${failure && failure.message ? failure.message : String(failure)}`,
+              })
+              return
+            }
+          }
           const stamp = `${started.getFullYear()}${String(started.getMonth() + 1).padStart(2, '0')}${String(started.getDate()).padStart(2, '0')}-${String(started.getHours()).padStart(2, '0')}${String(started.getMinutes()).padStart(2, '0')}`
           const prefix = locale === 'zh' ? '会话备份' : 'session-backup'
-          const name = saveBinary(archive, `${prefix}-${stamp}.zip`, 'application/zip')
+          const name = saveBinary(payload, `${prefix}-${stamp}.${extension}`, encrypted ? 'application/octet-stream' : 'application/zip')
+          try {
+            window.localStorage.setItem('dsh-export-center:last-export', String(started.getTime()))
+          } catch (error) {
+            // Storage can be unavailable; the timestamp is a convenience only.
+          }
+          setLastExportAt(started.getTime())
           setSessionBusy(null)
           setSessionMessage({
             kind: failures.length > 0 || skipped.length > 0 ? 'error' : 'info',
             text: `${t('done')} ${packages.length} ${t('doneSessions')} · ${Math.round(bytes / 1024)} KB`
               + (failures.length > 0 ? ` · ${failures.length} ✕` : '')
               + (skipped.length > 0 ? ` · ${t('skippedHint', { n: skipped.length })}` : '')
+              + (encrypted ? ` · ${t('encryptedDone')}` : '')
               + ` · ${t('archiveHint')}${name}`,
             skipped,
           })
@@ -1232,20 +1336,12 @@ window.__ModuleLoader__.load({
         /* ---------- session logs: import ---------- */
 
         /**
-         * Upload one archive to the Host, which restores every Session inside it.
-         * The Host owns writing: this half only carries the bytes and renders
-         * the per-Session report it answers with.
-         * @param file - the picked `.zip` archive.
+         * Upload plain archive bytes to the Host, which restores every Session
+         * inside them. The Host owns writing; this half carries the bytes and
+         * renders the report it answers with.
+         * @param bytes - plain container archive bytes.
          */
-        const restoreArchive = async (file) => {
-          if (file.size > ARCHIVE_LIMIT) {
-            setSessionMessage({ kind: 'error', text: t('archiveTooLarge') })
-            return
-          }
-          if (!hostReady) {
-            setSessionMessage({ kind: 'error', text: t('hostMissingHint') })
-            return
-          }
+        const uploadArchive = async (bytes) => {
           const controller = new AbortController()
           importAbort.current = controller
           setSessionBusy({ done: 0, total: 1 })
@@ -1253,7 +1349,6 @@ window.__ModuleLoader__.load({
           setRestoreReport(null)
           setDuplicateWarning(false)
           try {
-            const bytes = new Uint8Array(await file.arrayBuffer())
             const query = new URLSearchParams()
             if (targetWorkspace !== '') query.set('workspaceId', targetWorkspace)
             const archiveId = await digestHex(bytes)
@@ -1293,6 +1388,51 @@ window.__ModuleLoader__.load({
           } finally {
             importAbort.current = null
             setSessionBusy(null)
+          }
+        }
+
+        /**
+         * Read a picked file; an encrypted package waits for its password.
+         * @param file - the picked `.zip` or `.dshbak` archive.
+         */
+        const restoreArchive = async (file) => {
+          if (file.size > ARCHIVE_LIMIT) {
+            setSessionMessage({ kind: 'error', text: t('archiveTooLarge') })
+            return
+          }
+          if (!hostReady) {
+            setSessionMessage({ kind: 'error', text: t('hostMissingHint') })
+            return
+          }
+          let bytes
+          try {
+            bytes = new Uint8Array(await file.arrayBuffer())
+          } catch (failure) {
+            setSessionMessage({ kind: 'error', text: `${t('error')}: ${failure && failure.message ? failure.message : String(failure)}` })
+            return
+          }
+          if (isEncryptedArchive(bytes)) {
+            setPendingEncrypted({ bytes, name: file.name })
+            setPendingPassword('')
+            setSessionMessage(null)
+            return
+          }
+          await uploadArchive(bytes)
+        }
+
+        /** Decrypt the pending archive and hand the plain bytes to the Host. */
+        const decryptPending = async () => {
+          if (pendingEncrypted === null) return
+          setSessionBusy({ done: 0, total: 1 })
+          setSessionMessage(null)
+          try {
+            const plain = await decryptArchive(pendingEncrypted.bytes, pendingPassword)
+            setPendingEncrypted(null)
+            setPendingPassword('')
+            await uploadArchive(plain)
+          } catch (failure) {
+            setSessionBusy(null)
+            setSessionMessage({ kind: 'error', text: t('wrongPassword') })
           }
         }
 
@@ -1597,6 +1737,28 @@ window.__ModuleLoader__.load({
                 }, showAllFailures ? t('showLessErrors') : `${t('showAllErrors')} (${restoreReport.failed.length})`)
                 : null) : null) : null,
 
+          pendingEncrypted === null ? null : h('div', { style: styles.preview },
+            h('p', { style: { margin: 0, fontWeight: 600 } }, t('passwordTitle')),
+            h('p', { style: styles.hint }, pendingEncrypted.name),
+            h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' } },
+              h('input', {
+                style: styles.input,
+                type: 'password',
+                value: pendingPassword,
+                placeholder: t('encryptPlaceholder'),
+                onChange: (event) => setPendingPassword(event.target.value),
+              }),
+              h('button', {
+                style: styles.primary,
+                onClick: decryptPending,
+                disabled: pendingPassword === '' || sessionBusy !== null,
+              }, t('passwordConfirm')),
+              h('button', {
+                style: styles.button,
+                onClick: () => { setPendingEncrypted(null); setPendingPassword('') },
+                disabled: sessionBusy !== null,
+              }, t('passwordCancel')))),
+
           sessionMessage ? h('p', {
             role: 'status',
             'aria-live': 'polite',
@@ -1629,10 +1791,32 @@ window.__ModuleLoader__.load({
               }, workspaces.map((workspace) => h('option', { value: workspace.id, key: workspace.id },
                 workspace.title ? `${workspace.title} — ${workspace.path}` : workspace.path)))),
 
+            h('label', { style: { ...styles.row, gap: '4px' }, title: t('incrementalHint') },
+              h('input', {
+                type: 'checkbox',
+                checked: incremental,
+                onChange: (event) => setIncremental(event.target.checked),
+                disabled: sessionBusy !== null,
+              }),
+              h('span', null, t('incremental')),
+              lastExportAt > 0
+                ? h('span', { style: styles.mono }, `${t('lastExportAt')} ${formatTime(lastExportAt)}`)
+                : null),
+
+            h('input', {
+              style: styles.input,
+              type: 'password',
+              value: encryptPassword,
+              placeholder: t('encryptPlaceholder'),
+              title: t('encryptHint'),
+              onChange: (event) => setEncryptPassword(event.target.value),
+              disabled: sessionBusy !== null,
+            }),
+
             h('input', {
               type: 'file',
               ref: sessionFileRef,
-              accept: '.zip,application/zip',
+              accept: '.zip,.dshbak,application/zip,application/octet-stream',
               onChange: onPickSessionFile,
               style: { display: 'none' },
             }),
