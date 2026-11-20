@@ -1,5 +1,5 @@
 {
-    "name":  "dsh-export-center",
+    "name":  "dsh-export-center-plugin",
     "version":  "0.3.2",
     "type":  "module",
     "description":  "Batch-export DeepSeek Harness Sessions as restorable archives with attachments and subagents, restore them on another machine, and move the plugin inventory.",
