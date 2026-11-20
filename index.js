@@ -186,6 +186,10 @@ async function restoreArchive(ctx, container, options = {}) {
       const targetInfo = target === undefined
         ? null
         : { id: target.workspace.id, path: target.workspace.path, mode: target.mode }
+      // A fork carries an inherited prefix marked by `session/end-seed`; that
+      // prefix keeps its original session references and is re-seeded as-is.
+      const seeded = source.isSeeded === true && root.seedIndex >= 0
+      const inherited = seeded ? root.seedIndex + 1 : undefined
       // Allocate every id first: events carry the source Session id (delivery
       // markers, parent links), and the stored log must name its own Session.
       const rootId = sessionId()
@@ -193,15 +197,14 @@ async function restoreArchive(ctx, container, options = {}) {
       const idMap = new Map()
       idMap.set(source.id, rootId)
       root.children.forEach((child, index) => idMap.set(child.header.id, childIds[index]))
-      rewriteSessionRefs(root.events, idMap)
-      for (const child of root.children) rewriteSessionRefs(child.events, idMap)
+      rewriteSessionRefs(root.events, idMap, seeded ? inherited : 0)
 
       const header = {
         version: SESSION_FORMAT_VERSION,
         id: rootId,
         createdAt: finiteTime(source.createdAt),
         cwd: target === undefined ? undefined : target.workspace.path,
-        isSeeded: false,
+        isSeeded: seeded,
       }
       if (typeof source.delegationDepth === 'number' && Number.isSafeInteger(source.delegationDepth)) {
         header.delegationDepth = Math.max(0, source.delegationDepth)
@@ -211,7 +214,7 @@ async function restoreArchive(ctx, container, options = {}) {
       if (typeof source.agentPreset === 'string' && source.agentPreset !== '' && !presetDropped) {
         header.agentPreset = source.agentPreset
       }
-      const written = await writeSession(persistence, projectionCache, header, root.events)
+      const written = await writeSession(persistence, projectionCache, header, root.events, inherited)
       if (!written.ok) {
         report.failed.push({
           entry: root.name,
@@ -232,17 +235,20 @@ async function restoreArchive(ctx, container, options = {}) {
       let children = 0
       for (let index = 0; index < root.children.length; index += 1) {
         const child = root.children[index]
+        const childSeeded = child.header.isSeeded === true && child.seedIndex >= 0
+        const childInherited = childSeeded ? child.seedIndex + 1 : undefined
+        rewriteSessionRefs(child.events, idMap, childSeeded ? childInherited : 0)
         const childHeader = {
           version: SESSION_FORMAT_VERSION,
           id: childIds[index],
           createdAt: finiteTime(child.header.createdAt),
           cwd: header.cwd,
-          isSeeded: false,
+          isSeeded: childSeeded,
           parentSession: idMap.get(child.header.parentSession) ?? header.id,
           origin: 'subagent',
           delegationDepth: childDepth(child.header, header),
         }
-        const childWritten = await writeSession(persistence, projectionCache, childHeader, child.events)
+        const childWritten = await writeSession(persistence, projectionCache, childHeader, child.events, childInherited)
         if (!childWritten.ok) {
           report.failed.push({ entry: `${root.name}#${child.name}`, reason: childWritten.reason })
           continue
@@ -279,11 +285,11 @@ async function restoreArchive(ctx, container, options = {}) {
  * @param events - validated event list.
  * @returns success flag and the failure reason.
  */
-async function writeSession(persistence, projectionCache, header, events) {
+async function writeSession(persistence, projectionCache, header, events, inheritedEventCount) {
   let handle
   let created = false
   try {
-    handle = await persistence.create(header)
+    handle = await persistence.create(header, inheritedEventCount === undefined ? undefined : { inheritedEventCount })
     created = true
     // Append in bounded batches: one 5 MB frame is legal Zstandard, but the
     // persistence decoder is built for the small batches a live Session writes.
@@ -315,7 +321,7 @@ const SESSION_REF_KEYS = new Set(['sessionId', 'parentSessionId', 'childSessionI
  * @param events - event list to rewrite in place.
  * @param idMap - source id to restored id.
  */
-function rewriteSessionRefs(events, idMap) {
+function rewriteSessionRefs(events, idMap, offset = 0) {
   const walk = (value) => {
     if (Array.isArray(value)) {
       for (const item of value) walk(item)
@@ -330,7 +336,7 @@ function rewriteSessionRefs(events, idMap) {
       walk(child)
     }
   }
-  for (const event of events) walk(event.data)
+  for (let index = offset; index < events.length; index += 1) walk(events[index].data)
 }
 
 /**
@@ -445,7 +451,7 @@ function parseInnerPackage(inner, name) {
     if (entry === rootLog || !entry.includes('/')) continue
     try {
       const log = parseLog(inner.get(entry), entry)
-      children.push({ name: entry, header: log.header, events: log.events })
+      children.push({ name: entry, header: log.header, events: log.events, seedIndex: log.seedIndex })
     } catch (error) {
       return { name, error: `${entry}: ${messageOf(error)}` }
     }
@@ -458,6 +464,7 @@ function parseInnerPackage(inner, name) {
     header: root.header,
     events: root.events,
     title: root.title,
+    seedIndex: root.seedIndex,
     children,
     attachments,
   }
@@ -476,6 +483,7 @@ function parseLog(bytes, name) {
   let header
   const events = []
   let title = ''
+  let seedIndex = -1
   for (const line of lines) {
     const trimmed = line.trim()
     if (trimmed === '') continue
@@ -495,10 +503,11 @@ function parseLog(bytes, name) {
     if (value === null || typeof value !== 'object' || typeof value.type !== 'string') continue
     events.push(value)
     if (value.type === 'session/title') title = titleOf(value) || title
+    if (value.type === 'session/end-seed') seedIndex = events.length - 1
     if (events.length > MAX_EVENTS) throw new Error(`more than ${MAX_EVENTS} events`)
   }
   if (header === undefined) throw new Error('empty log')
-  return { header, events, title }
+  return { header, events, title, seedIndex }
 }
 
 /**
