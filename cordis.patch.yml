@@ -3,4 +3,4 @@
 # Remotes.
 - insert:
     - id: export-center
-      name: 'dsh-export-center'
+      name: 'dsh-export-center-plugin'
