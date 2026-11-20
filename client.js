@@ -18,7 +18,7 @@
  * Neither block depends on the other; each has its own export and import.
  */
 window.__ModuleLoader__.load({
-  id: 'dsh-export-center',
+  id: 'dsh-export-center-plugin',
   factory(require) {
     const React = require('react')
     const h = React.createElement
@@ -26,7 +26,7 @@ window.__ModuleLoader__.load({
     const NS = 'exportCenter'
     const PANEL_ID = 'export-center'
     /** This package's own Loader name; also its `/plugins/<id>/` asset directory. */
-    const PLUGIN_ID = 'dsh-export-center'
+    const PLUGIN_ID = 'dsh-export-center-plugin'
     /**
      * Build identity, rewritten by `_release.cjs` from package.json on every
      * release. The served bundle is the only file the Host guarantees it can
