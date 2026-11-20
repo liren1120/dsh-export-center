@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img" aria-label="Export center: batch-export Sessions as restorable archives">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0b1220"/>
+      <stop offset="1" stop-color="#13233a"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="120" y1="140" x2="520" y2="520" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4f8cff"/>
+      <stop offset="1" stop-color="#2fd4a7"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <g opacity="0.12" stroke="#8fb4ff" stroke-width="1">
+    <path d="M0 90h1200M0 180h1200M0 270h1200M0 360h1200M0 450h1200M0 540h1200"/>
+    <path d="M150 0v630M300 0v630M450 0v630M600 0v630M750 0v630M900 0v630M1050 0v630"/>
+  </g>
+  <g transform="translate(96 96)">
+    <rect width="88" height="88" rx="22" fill="url(#accent)"/>
+    <path d="M44 22v26" stroke="#06101f" stroke-width="7" stroke-linecap="round"/>
+    <path d="M31 42l13 13 13-13" fill="none" stroke="#06101f" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M26 64h36" stroke="#06101f" stroke-width="7" stroke-linecap="round"/>
+  </g>
+  <text x="96" y="262" fill="#eaf1ff" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="64" font-weight="700">Export center</text>
+  <text x="96" y="316" fill="#9fb6d9" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="30">导出中心</text>
+  <text x="96" y="392" fill="#cfe0f8" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="26">Batch-export Sessions as restorable archives</text>
+  <text x="96" y="432" fill="#8fa9cc" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="22">logs · subagent sessions · attachments · original times</text>
+  <g font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="22" fill="#dbe8fb">
+    <rect x="96" y="486" width="300" height="56" rx="14" fill="#16283f" stroke="#2c4a70"/>
+    <text x="118" y="522">Pick Sessions</text>
+    <rect x="416" y="486" width="300" height="56" rx="14" fill="#16283f" stroke="#2c4a70"/>
+    <text x="438" y="522">One .zip archive</text>
+    <rect x="736" y="486" width="368" height="56" rx="14" fill="#16283f" stroke="#2c4a70"/>
+    <text x="758" y="522">Restore on another machine</text>
+  </g>
+  <g stroke="#2c4a70" stroke-width="2" fill="none">
+    <path d="M396 514h20" stroke-linecap="round"/>
+    <path d="M416 514l-8-8M416 514l-8 8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M716 514h20" stroke-linecap="round"/>
+    <path d="M736 514l-8-8M736 514l-8 8" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="96" y="590" fill="#6f88aa" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="18">DeepSeek Harness plugin · MIT</text>
+</svg>
