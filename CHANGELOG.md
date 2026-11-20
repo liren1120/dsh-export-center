@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.4.0
+
+Archive reading moves to a maintained library.
+
+- **`fflate` reads archives.** The hand-written ZIP parser is gone: fflate
+  streams each entry (including data descriptors) and reports structural errors
+  per entry. The dependency is declared in `package.json` and installed with the
+  plugin.
+- **The limits and checks survive the swap.** A per-entry 64 MB cap, a 512 MB
+  cumulative budget, and ZIP64/central-directory validation are enforced on the
+  produced bytes; CRC-32 is still verified, from the central directory, because
+  fflate does not expose the expected checksum.
+- **One corrupt package still fails alone.** `bad CRC`, truncated archives, and
+  decompression bombs are rejected with a per-package reason instead of a 500.
+- The release keeps the 0.3.2 behavior and data formats: archive schema 2,
+  plugin manifest v2, localized exports.
+
 ## 0.3.2
 
 Safety, cancellation, and localized exports.
