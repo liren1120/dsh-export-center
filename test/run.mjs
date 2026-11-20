@@ -117,16 +117,18 @@ function packageFor(sourceId, options = {}) {
 function harness() {
   const routes = []
   const writes = []
+  const createOptions = []
   const attached = []
   const attachments = []
   const ctx = {
     effect: (fn) => fn(),
     connection: { fetch: { register: (route) => { routes.push(route); return () => {} } } },
     sessionPersistence: {
-      create: async (header) => {
+      create: async (header, options) => {
         writes.push(header)
+        createOptions.push(options)
         return {
-          append: async (events) => { header.eventCount = events.length },
+          append: async (events) => { header.eventCount = events.length; header.appended = events },
           flush: async () => {},
           close: async () => {},
         }
@@ -160,6 +162,7 @@ function harness() {
     },
     get,
     writes,
+    createOptions,
     attached,
     attachments,
   }
@@ -259,6 +262,26 @@ function check(name, condition, detail = '') {
   const response = await h.get(new Request('http://127.0.0.1/api/export-center.workspaces'))
   const body = await response.json()
   check('workspaces listed', response.status === 200 && body.workspaces.length === 2)
+}
+
+// 9. a forked Session keeps its seeded prefix and inherited cut
+{
+  const h = harness()
+  const header = { type: 'session', version: 4, id: 'session-fork', createdAt: 1700000000000, cwd: 'C:\\source', isSeeded: true, delegationDepth: 0 }
+  const events = [
+    { type: 'session-log-deepseek/delivery-accepted', seq: 0, time: 1700000000001, data: { sessionId: 'session-fork' } },
+    { type: 'session/end-seed', seq: 1, time: 1700000000002, data: { inherited: true } },
+    { type: 'session-log-deepseek/delivery-accepted', seq: 2, time: 1700000000003, data: { sessionId: 'session-fork' } },
+  ]
+  const log = [header, ...events].map((value) => JSON.stringify(value)).join('\n') + '\n'
+  const container = buildZip([['sessions/f.zip', buildZip([{ name: 'session.v4.jsonl', raw: log }])]])
+  const { report } = await h.post('', container)
+  check('fork restored', report.restored.length === 1)
+  check('seeded header preserved', h.writes[0]?.isSeeded === true)
+  check('inherited cut passed', h.createOptions[0]?.inheritedEventCount === 2)
+  const appended = h.writes[0]?.appended ?? []
+  check('inherited prefix keeps its session reference', appended[0]?.data?.sessionId === 'session-fork')
+  check('own delivery marker follows the new Session', appended[2]?.data?.sessionId !== 'session-fork')
 }
 
 console.log(failures === 0 ? '\nall tests passed' : `\n${failures} test(s) failed`)
