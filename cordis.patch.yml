@@ -1,0 +1,6 @@
+# Export center: one sidebar entry. The Host half owns the archive import route
+# and reads the plugin inventory through the existing pluginManager and session
+# Remotes.
+- insert:
+    - id: export-center
+      name: 'dsh-export-center'
