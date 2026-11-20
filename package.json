@@ -1,0 +1,58 @@
+{
+    "name":  "dsh-export-center",
+    "version":  "0.3.2",
+    "type":  "module",
+    "description":  "Batch-export DeepSeek Harness Sessions as restorable archives with attachments and subagents, restore them on another machine, and move the plugin inventory.",
+    "license":  "MIT",
+    "author":  "liren1120",
+    "homepage":  "https://gitee.com/lirenmelodic-resonance/dsh-export-center",
+    "repository":  {
+                       "type":  "git",
+                       "url":  "git+https://gitee.com/lirenmelodic-resonance/dsh-export-center.git"
+                   },
+    "keywords":  [
+                     "dsh",
+                     "dsh-plugin",
+                     "export",
+                     "backup",
+                     "migration",
+                     "sessions"
+                 ],
+    "icon":  "./icon.svg",
+    "exports":  {
+                    ".":  "./index.js",
+                    "./client":  "./client.js",
+                    "./icon":  "./icon.svg",
+                    "./version":  "./version.json",
+                    "./locale/*.json":  "./locale/*.json"
+                },
+    "files":  [
+                  "index.js",
+                  "client.js",
+                  "cordis.patch.yml",
+                  "icon.svg",
+                  "version.json",
+                  "locale/*.json",
+                  "docs",
+                  "CHANGELOG.md",
+                  "README.md",
+                  "LICENSE",
+                  "market"
+              ],
+    "engines":  {
+                    "dsh":  "\u003e=0.2.2-rc.5 \u003c0.3.0"
+                },
+    "dsh":  {
+                "bundle":  {
+                               "patch":  "./cordis.patch.yml"
+                           },
+                "client":  {
+                               "platform":  "web",
+                               "immediately":  true,
+                               "inject":  [
+                                              "@deepseek-ai/dsh-client-ui-sidebar",
+                                              "@deepseek-ai/dsh-client-ui-layout"
+                                          ]
+                           }
+            }
+}
