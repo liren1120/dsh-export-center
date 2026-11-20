@@ -15,7 +15,7 @@
  * deliberately declares no dependency.
  */
 import { randomUUID } from 'node:crypto'
-import { inflateRawSync } from 'node:zlib'
+import { Unzip, UnzipInflate, UnzipPassThrough } from 'fflate'
 
 /** Absolute path of the archive upload route. */
 const IMPORT_PATH = '/api/export-center.import'
@@ -599,80 +599,90 @@ function finiteTime(value) {
 }
 
 /**
- * Read every entry of a ZIP archive under explicit resource limits.
+ * Read every entry of a ZIP archive with fflate's streaming reader.
  *
- * The central directory is caller-supplied data: a declared size cannot bound
- * what inflate produces, so every entry is inflated with `maxOutputLength` and
- * the whole archive has a cumulative output budget. Stored and inflated bytes
- * are checked against the recorded CRC-32, and ZIP64 markers are refused rather
- * than misinterpreted.
+ * The central directory is caller-supplied data, so every entry is bounded as
+ * it is produced rather than as it is declared, and the whole archive has a
+ * cumulative output budget. fflate owns the structural side (ZIP64, data
+ * descriptors, malformed headers) and reports per-entry errors through the
+ * file callback.
  * @param bytes - archive bytes.
  * @param name - archive label used in diagnostics.
  * @returns entry name to uncompressed bytes.
  */
 function readZip(bytes, name = 'archive') {
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-  const end = findEndOfCentralDirectory(view, bytes.length)
-  if (end < 0) throw new Error(`${name}: not a ZIP archive`)
-  const count = view.getUint16(end + 10, true)
-  const directoryOffset = view.getUint32(end + 16, true)
+  const crcByName = zipCrcMap(bytes)
+  if (crcByName === undefined) throw new Error(`${name}: missing or damaged central directory`)
   const entries = new Map()
-  let cursor = directoryOffset
-  let totalUncompressed = 0
-  for (let index = 0; index < count; index += 1) {
-    if (cursor + 46 > bytes.length || view.getUint32(cursor, true) !== 0x02014b50) {
-      throw new Error(`${name}: damaged central directory`)
-    }
-    const method = view.getUint16(cursor + 10, true)
-    const fileCrc = view.getUint32(cursor + 16, true)
-    const compressedSize = view.getUint32(cursor + 20, true)
-    const uncompressedSize = view.getUint32(cursor + 24, true)
-    const nameLength = view.getUint16(cursor + 28, true)
-    const extraLength = view.getUint16(cursor + 30, true)
-    const commentLength = view.getUint16(cursor + 32, true)
-    const localOffset = view.getUint32(cursor + 42, true)
-    if (compressedSize === 0xffffffff || uncompressedSize === 0xffffffff || localOffset === 0xffffffff) {
-      throw new Error(`${name}: ZIP64 entries are not accepted`)
-    }
-    const entryName = new TextDecoder().decode(bytes.subarray(cursor + 46, cursor + 46 + nameLength))
-    cursor += 46 + nameLength + extraLength + commentLength
-    if (entryName.endsWith('/')) continue
-    if (uncompressedSize > MAX_ENTRY_BYTES) {
-      throw new Error(`${name}/${entryName}: declared size exceeds ${MAX_ENTRY_BYTES} bytes`)
-    }
-    if (localOffset + 30 > bytes.length || view.getUint32(localOffset, true) !== 0x04034b50) {
-      throw new Error(`${name}/${entryName}: damaged local header`)
-    }
-    const localNameLength = view.getUint16(localOffset + 26, true)
-    const localExtraLength = view.getUint16(localOffset + 28, true)
-    const dataStart = localOffset + 30 + localNameLength + localExtraLength
-    if (dataStart + compressedSize > bytes.length) throw new Error(`${name}/${entryName}: truncated data`)
-    const data = bytes.subarray(dataStart, dataStart + compressedSize)
-    let output
-    if (method === 0) {
-      if (data.length > MAX_ENTRY_BYTES) throw new Error(`${name}/${entryName}: stored entry exceeds the limit`)
-      output = data
-    } else if (method === 8) {
-      try {
-        output = new Uint8Array(inflateRawSync(data, { maxOutputLength: MAX_ENTRY_BYTES }))
-      } catch (error) {
-        throw new Error(`${name}/${entryName}: inflate failed (${messageOf(error)})`)
+  let failure
+  let total = 0
+  const unzip = new Unzip()
+  unzip.register(UnzipInflate)
+  unzip.register(UnzipPassThrough)
+  unzip.onfile = (file) => {
+    if (failure !== undefined) return
+    if (file.name.endsWith('/')) return
+    const chunks = []
+    let size = 0
+    file.ondata = (error, chunk, final) => {
+      if (failure !== undefined) return
+      if (error) {
+        failure = new Error(`${name}/${file.name}: ${messageOf(error)}`)
+        if (typeof file.terminate === 'function') file.terminate()
+        return
       }
-    } else {
-      throw new Error(`${name}/${entryName}: unsupported compression method ${method}`)
+      size += chunk.length
+      total += chunk.length
+      if (size > MAX_ENTRY_BYTES) {
+        failure = new Error(`${name}/${file.name}: entry exceeds ${MAX_ENTRY_BYTES} bytes`)
+        if (typeof file.terminate === 'function') file.terminate()
+        return
+      }
+      if (total > MAX_TOTAL_UNCOMPRESSED) {
+        failure = new Error(`${name}: uncompressed total exceeds ${MAX_TOTAL_UNCOMPRESSED} bytes`)
+        if (typeof file.terminate === 'function') file.terminate()
+        return
+      }
+      chunks.push(chunk)
+      if (final) {
+        const output = joinChunks(chunks, size)
+        const expected = crcByName === undefined ? undefined : crcByName.get(file.name)
+        if (expected !== undefined && crc32(output) !== expected) {
+          failure = new Error(`${name}/${file.name}: CRC mismatch`)
+          if (typeof file.terminate === 'function') file.terminate()
+          return
+        }
+        entries.set(file.name, output)
+      }
     }
-    totalUncompressed += output.length
-    if (totalUncompressed > MAX_TOTAL_UNCOMPRESSED) {
-      throw new Error(`${name}: uncompressed total exceeds ${MAX_TOTAL_UNCOMPRESSED} bytes`)
-    }
-    if (crc32(output) !== fileCrc) throw new Error(`${name}/${entryName}: CRC mismatch`)
-    entries.set(entryName, output)
+    file.start()
   }
+  try {
+    unzip.push(bytes, true)
+  } catch (error) {
+    throw new Error(`${name}: ${messageOf(error)}`)
+  }
+  if (failure !== undefined) throw failure
   return entries
 }
 
+/**
+ * Join byte chunks into one array.
+ * @param chunks - produced chunks.
+ * @param length - total byte length.
+ * @returns the joined bytes.
+ */
+function joinChunks(chunks, length) {
+  const out = new Uint8Array(length)
+  let offset = 0
+  for (const chunk of chunks) {
+    out.set(chunk, offset)
+    offset += chunk.length
+  }
+  return out
+}
 /** CRC-32 lookup table. */
-const HOST_CRC_TABLE = (() => {
+const CRC_TABLE = (() => {
   const table = new Uint32Array(256)
   for (let index = 0; index < 256; index += 1) {
     let value = index
@@ -684,33 +694,50 @@ const HOST_CRC_TABLE = (() => {
   return table
 })()
 
-/**
- * CRC-32 of one byte array.
- * @param bytes - bytes to checksum.
- * @returns the unsigned CRC.
- */
+/** CRC-32 of one byte array. */
 function crc32(bytes) {
   let value = 0xffffffff
   for (let index = 0; index < bytes.length; index += 1) {
-    value = HOST_CRC_TABLE[(value ^ bytes[index]) & 0xff] ^ (value >>> 8)
+    value = CRC_TABLE[(value ^ bytes[index]) & 0xff] ^ (value >>> 8)
   }
   return (value ^ 0xffffffff) >>> 0
 }
 
 /**
- * Find the end-of-central-directory record.
- * @param view - archive bytes reader.
- * @param length - archive byte length.
- * @returns record offset, or -1.
+ * Read the recorded CRC-32 of every entry from the central directory.
+ * fflate streams and validates the archive structure but does not expose the
+ * expected checksum, so integrity is checked here.
+ * @param bytes - archive bytes.
+ * @returns entry name to CRC, or undefined when the directory cannot be read.
  */
+function zipCrcMap(bytes) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  const end = findEndOfCentralDirectory(view, bytes.length)
+  if (end < 0) return undefined
+  const count = view.getUint16(end + 10, true)
+  let cursor = view.getUint32(end + 16, true)
+  const map = new Map()
+  for (let index = 0; index < count; index += 1) {
+    if (cursor + 46 > bytes.length || view.getUint32(cursor, true) !== 0x02014b50) return undefined
+    const expected = view.getUint32(cursor + 16, true)
+    const nameLength = view.getUint16(cursor + 28, true)
+    const extraLength = view.getUint16(cursor + 30, true)
+    const commentLength = view.getUint16(cursor + 32, true)
+    const entryName = new TextDecoder().decode(bytes.subarray(cursor + 46, cursor + 46 + nameLength))
+    map.set(entryName, expected)
+    cursor += 46 + nameLength + extraLength + commentLength
+  }
+  return map
+}
+
+/** Find the end-of-central-directory record. */
 function findEndOfCentralDirectory(view, length) {
   const earliest = Math.max(0, length - 0xffff - 22)
   for (let offset = length - 22; offset >= earliest; offset -= 1) {
-    if (view.getUint32(offset, true) === 0x06054b50) return offset
+    if (offset >= 0 && view.getUint32(offset, true) === 0x06054b50) return offset
   }
   return -1
 }
-
 /**
  * One JSON response.
  * @param status - HTTP status.
