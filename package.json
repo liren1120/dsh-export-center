@@ -37,7 +37,8 @@
                   "CHANGELOG.md",
                   "README.md",
                   "LICENSE",
-                  "market"
+                  "market",
+                  "vendor"
               ],
     "engines":  {
                     "dsh":  "\u003e=0.2.2-rc.5 \u003c0.3.0"
@@ -54,8 +55,5 @@
                                               "@deepseek-ai/dsh-client-ui-layout"
                                           ]
                            }
-            },
-    "dependencies":  {
-                         "fflate":  "^0.8.3"
-                     }
+            }
 }
