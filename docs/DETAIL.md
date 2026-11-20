@@ -1,5 +1,7 @@
 # Export center
 
+![Export center: batch-export Sessions as restorable archives](preview.svg)
+
 Two independent blocks on one page. The plugin inventory moves how a machine's
 bundles are installed; the Session block moves conversations.
 
