@@ -75,9 +75,10 @@ would exceed it stops at the budget and reports the Sessions it left out.
 - A Session whose log write fails after its header was stored is reported with
   its residual id. The persistence API offers no deletion, so the leftover must
   be removed by hand.
-- Forked (`isSeeded`) sources are restored with `isSeeded: false`; the seed
-  marker is replayed as ordinary history, so they read correctly but their
-  resume behavior is not verified.
+- Forked (`isSeeded`) sources keep their seed marker: the restored Session is
+  written as seeded with the exact inherited cut (the last `session/end-seed`
+  event), and only the child-owned events have their Session references
+  rewritten. Resuming such a Session in DSH is the remaining unverified case.
 
 ## Export language
 
