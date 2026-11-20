@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.0
+
+Forked Sessions survive the round trip.
+
+- A source Session with `isSeeded: true` is restored as seeded: the header keeps
+  the flag, `sessionPersistence.create` receives the exact inherited cut derived
+  from the last `session/end-seed` event, and the inherited prefix keeps its
+  original Session references while only the child-owned events are rewritten.
+- Subagent logs follow the same rule when they are seeded.
+- `test/run.mjs` gains a fork fixture: a seeded header, an inherited prefix, and
+  a delivery marker on each side of the cut.
+
 ## 0.4.1
 
 Repository quality, no runtime change.
