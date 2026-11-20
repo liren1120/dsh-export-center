@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.1
+
+Repository quality, no runtime change.
+
+- `test/run.mjs`: a self-contained Host-half suite that builds real ZIP
+  archives in memory — honest input, a decompression bomb, a bad CRC, a
+  truncated archive, duplicate imports, subagent depth, preset fallback, and
+  attachment conversion. No network, no browser, no DSH.
+- `docs/preview.svg` and its reference in the detail document, so the market
+  page has a visual.
+- `npm test` maps to the suite.
+
 ## 0.4.0
 
 Archive reading moves to a maintained library.
