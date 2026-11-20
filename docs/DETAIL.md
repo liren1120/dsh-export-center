@@ -68,7 +68,7 @@ would exceed it stops at the budget and reports the Sessions it left out.
   `409`. Both operations can be cancelled from the panel; a cancelled import
   keeps the Sessions it already wrote.
 - Archive limits: 256 MB uploaded, 64 MB per produced entry, 512 MB inflated
-  per archive, 500 Session logs, 200 000 events per log. Entries are read by
+  per archive, 500 Session logs, 500 000 events per log. Entries are read by
   `fflate` on a streaming basis; a CRC mismatch, a damaged central directory, or
   an over-limit entry fails only that package. Archives without a readable
   central directory are refused, so ZIP64 archives are not accepted.
@@ -90,6 +90,22 @@ content and titles are never translated.
 
 The archive README states what exported what, when, from which environment, and
 how to restore it.
+
+## Encrypted exports
+
+An optional password (the field next to Export) turns the container into an
+encrypted `.dshbak` package: AES-GCM-256 with a PBKDF2-SHA-256 key (210 000
+iterations), a random 16-byte salt, and a random 12-byte IV. The file starts
+with the `DSHENC1` magic. Import detects that magic and asks for the password
+before uploading; a wrong password reports a clear failure and changes nothing.
+
+## Incremental export
+
+With **New only** ticked, Export keeps the Sessions of the current selection
+that were updated after the last successful export on this machine (the
+timestamp is stored in the page's local storage). The panel shows when that was
+and reports when nothing is new. The timestamp moves only after a successful
+export.
 
 ## Plugin inventory
 
