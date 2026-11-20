@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.0
+
+Two export options the previous versions only promised.
+
+- **Encrypted exports.** A password in the export footer writes an encrypted
+  `.dshbak` package instead of a plain ZIP: AES-GCM-256, PBKDF2-SHA-256
+  (210 000 iterations), random salt and IV, `DSHENC1` magic. Import recognises
+  the magic, asks for the password in the panel, and reports a wrong password
+  without uploading anything.
+- **Incremental export.** With **New only** ticked, only Sessions updated after
+  the last successful export on this machine are packaged; the timestamp lives
+  in local storage and the panel shows it.
+- The per-Session event cap rises from 200 000 to 500 000; larger logs still
+  fail alone with a clear reason.
+
 ## 0.5.0
 
 Forked Sessions survive the round trip.
