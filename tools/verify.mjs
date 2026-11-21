@@ -59,6 +59,7 @@ const tsc = join(root, 'node_modules/typescript/bin/tsc')
 if (existsSync(tsc)) {
   try {
     execFileSync(process.execPath, [tsc, '-p', join(root, 'tsconfig.json')], { cwd: root, stdio: 'inherit' })
+    execFileSync(process.execPath, [tsc, '-p', join(root, 'tsconfig.client.json')], { cwd: root, stdio: 'inherit' })
     check('typecheck', true)
   } catch (error) {
     check('typecheck', false, 'tsc reported errors')

@@ -127,6 +127,8 @@ async function restoreArchive(ctx, container, options = {}) {
         let inner;
         try {
             inner = readZip(outer.get(name), name);
+            // Release the container entry; only one package is needed at a time.
+            outer.delete(name);
         }
         catch (error) {
             report.failed.push({ entry: name, reason: messageOf(error) });

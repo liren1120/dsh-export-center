@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.0.1
+
+Last hardening pass before the release line freezes.
+
+- **The browser half is type-checked too.** `tsconfig.client.json` runs
+  `checkJs` over `src/client/client.js` with ambient `window.__ModuleLoader__`
+  and `react` declarations; `npm run typecheck` and `tools/verify.mjs` now check
+  both halves.
+- **Import releases container entries as it goes.** After each inner package is
+  read, its entry is removed from the container map, so a 500-package container
+  does not keep every entry alive while the next one is written.
+- **Known limitations documented** in the README: no automated two-instance UI
+  E2E, fork resume unverified, client still a single file, whole-container
+  decompression with its caps.
+
 ## 1.0.0
 
 First stable release; the source is now split and both halves are build artifacts.

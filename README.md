@@ -156,6 +156,20 @@ so an install never needs a compiler.
 build artifacts. `npm run build` rebuilds them; `npm run verify` fails when any
 of them differs from `src/`.
 
+## Known limitations
+
+- **No automated two-instance UI end-to-end.** The suite imports a real
+  container with stub services; a real export → import → open round trip is a
+  manual check.
+- **Fork resume is unverified.** A seeded (`isSeeded`) Session keeps its flag
+  and inherited cut and opens, but continuing the conversation has not been
+  exercised on a real DSH.
+- **The browser half is a single file.** It is type-checked, but this
+  environment cannot run a bundler, so it is not split into modules.
+- **Import decompresses the whole container.** One package is processed at a
+  time, but the container map itself is bounded by the 512 MB limit; export
+  holds the batch plus the finished archive.
+
 ## License
 
 MIT.

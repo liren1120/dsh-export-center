@@ -1,6 +1,6 @@
 {
     "name":  "dsh-export-center-plugin",
-    "version":  "1.0.0",
+    "version":  "1.0.1",
     "type":  "module",
     "description":  "Batch-export DeepSeek Harness Sessions as restorable archives and move plugin inventories between machines. Requires DSH 0.2.2-rc.5 or newer and below 0.3.0.",
     "license":  "MIT",
@@ -64,7 +64,7 @@
                         },
     "scripts":  {
                     "test":  "node test/run.mjs",
-                    "typecheck":  "tsc -p tsconfig.json",
+                    "typecheck":  "tsc -p tsconfig.json \u0026\u0026 tsc -p tsconfig.client.json",
                     "verify":  "node tools/verify.mjs",
                     "build":  "node tools/build-plugin.mjs \u0026\u0026 node tools/build.mjs"
                 }
