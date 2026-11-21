@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.10.0
+
+The Host half is now TypeScript source; `index.js` is a build artifact.
+
+- `index.ts` is the source of truth. `tsconfig.json` type-checks it and
+  `tools/build-plugin.mjs` compiles it to the shipped `index.js`.
+- The artifact is committed, so installation still needs no build step, and
+  `tools/verify.mjs` fails when `index.js` no longer matches `index.ts`
+  (`host build is current`).
+- `npm run build` re-emits the artifact and then packages the release archive.
+- No behaviour change; the full suite runs against the emitted `index.js`.
+
 ## 0.9.0
 
 The TypeScript track starts with a gate, not a rewrite.

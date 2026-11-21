@@ -136,10 +136,13 @@ These only exist in a checkout (they need the dev dependencies):
 
 ```sh
 npm install
-npm run typecheck     # tsc -p tsconfig.json (checkJs over the Host half)
-npm run verify        # typecheck + version + files + docs + market + suite
-npm run build         # deterministic archive and SHA-256 in dist/
+npm run typecheck     # tsc -p tsconfig.json over index.ts
+npm run verify        # typecheck + host build check + files + docs + market + suite
+npm run build         # emit index.js, then a deterministic archive in dist/
 ```
+
+The Host half lives in `index.ts`; `index.js` is its committed build artifact,
+so an install never needs a compiler.
 
 ## License
 

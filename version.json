@@ -1,6 +1,6 @@
 {
     "name":  "dsh-export-center-plugin",
-    "version":  "0.9.0",
-    "builtAt":  "2026-11-21T02:42:47.427Z",
+    "version":  "0.10.0",
+    "builtAt":  "2026-11-21T02:49:34.660Z",
     "notes":  "The running browser build is the version inside client.js; this file records the released package version."
 }

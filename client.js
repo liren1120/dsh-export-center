@@ -32,7 +32,7 @@ window.__ModuleLoader__.load({
      * release. The served bundle is the only file the Host guarantees it can
      * reach, so the version travels inside it rather than in a side asset.
      */
-    const BUILD_VERSION = '0.9.0'
+    const BUILD_VERSION = '0.10.0'
 
     const zh = {
       panel: '导出中心',

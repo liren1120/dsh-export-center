@@ -49,6 +49,12 @@ if (process.env.RELEASE === '1') {
 check('market commit is pinned', typeof latest?.source?.commit === 'string' && /^[0-9a-f]{40}$/.test(latest.source.commit))
 check('market engine range stated', String(market.plugins?.[0]?.description?.en ?? '').includes('0.2.2-rc.5'))
 
+try {
+  execFileSync(process.execPath, [join(root, 'tools/build-plugin.mjs'), '--check'], { cwd: root, stdio: 'inherit' })
+  check('host build is current', true)
+} catch (error) {
+  check('host build is current', false, 'index.js does not match index.ts')
+}
 const tsc = join(root, 'node_modules/typescript/bin/tsc')
 if (existsSync(tsc)) {
   try {
