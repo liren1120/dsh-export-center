@@ -109,6 +109,15 @@ timestamp is stored in the page's local storage). The panel shows when that was
 and reports when nothing is new. The timestamp moves only after a successful
 export.
 
+## Import integrity checks
+
+Before anything is written the container manifest must be present and name a
+schema this build understands; a newer schema is refused. Each restored log is
+then re-opened and read to its last event, and the count must match what was
+written. A header without a usable `createdAt`, or a Session whose parent is
+not in the archive, is handled explicitly instead of being patched up silently.
+Packages beyond the 500-package limit are listed under `skipped`, and archive
+ids are persisted so a repeated import is still recognised after a restart.
 ## Plugin inventory
 
 - **Export** writes a manifest v2: `name`, `version`, `spec`,

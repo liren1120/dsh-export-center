@@ -7,9 +7,14 @@
  * archive reader is exercised against forged sizes, bad CRC, truncation, and
  * decompression bombs.
  */
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { deflateRawSync } from 'node:zlib'
-import { apply } from '../index.js'
+
+// Keep duplicate-detection state out of the real profile.
+process.env.DSH_EXPORT_CENTER_STATE_DIR = mkdtempSync(join(tmpdir(), 'export-center-test-'))
+const { apply } = await import('../index.js')
 
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256)
@@ -115,7 +120,19 @@ function packageFor(sourceId, options = {}) {
   return buildZip(entries)
 }
 
-function harness() {
+/** Wrap Session packages in a container with the manifest the Host validates. */
+function wrapContainer(pairs, manifest = {}) {
+  const head = {
+    kind: 'dsh-export-center/sessions',
+    schema: 2,
+    exportedAt: new Date().toISOString(),
+    sessions: pairs.map(([entry]) => ({ entry })),
+    ...manifest,
+  }
+  return buildZip([['manifest.json', Buffer.from(JSON.stringify(head))], ...pairs])
+}
+
+function harness(options = {}) {
   const routes = []
   const writes = []
   const createOptions = []
@@ -126,15 +143,23 @@ function harness() {
     connection: { fetch: { register: (route) => { routes.push(route); return () => {} } } },
     sessionPersistence: {
       create: async (header, options) => {
+        header.appended = []
         writes.push(header)
         createOptions.push(options)
         return {
-          append: async (events) => { header.eventCount = events.length; header.appended = events },
+          append: async (events) => { header.appended.push(...events) },
           flush: async () => {},
           close: async () => {},
         }
       },
-      open: async () => ({ read: async () => ({ events: [1] }), close: async () => {} }),
+      open: async (id) => {
+        const target = writes.find((header) => header.id === id)
+        const events = target === undefined ? [] : target.appended
+        return {
+          read: async (offset, limit) => ({ events: events.slice(offset, offset + limit) }),
+          close: async () => {},
+        }
+      },
     },
     workspaceRegistry: {
       list: () => [
@@ -145,7 +170,7 @@ function harness() {
     get: (name) => {
       if (name === 'attachments') {
         return {
-          saveImage: async (input) => { attachments.push(['image', input.mediaType, input.name]); return {} },
+          saveImage: async (input) => { attachments.push(['image', input.mediaType, input.name]); return { id: options.imageId ?? input.name.replace(/\.[^.]+$/, '') } },
           saveFile: async (input) => { attachments.push(['file', input.name, input.data.length]); return {} },
         }
       }
@@ -182,7 +207,7 @@ function check(name, condition, detail = '') {
 // 1. honest archive restores one Session with the original time and a rewritten delivery id
 {
   const h = harness()
-  const container = buildZip([['sessions/a.zip', packageFor('session-source', { attachments: [['media/pic.png', Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3])], ['files/ab/abcd/report.txt', Buffer.from('body')]] })]])
+  const container = wrapContainer([['sessions/a.zip', packageFor('session-source', { attachments: [['media/pic.png', Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3])], ['files/ab/abcd/report.txt', Buffer.from('body')]] })]])
   const { status, report } = await h.post('workspaceId=second&archiveId=archive-1', container)
   check('honest archive accepted', status === 200, JSON.stringify(report.failed))
   check('one Session restored', report.restored.length === 1)
@@ -198,7 +223,7 @@ function check(name, condition, detail = '') {
 // 2. duplicate archive id is reported but still restored
 {
   const h = harness()
-  const container = buildZip([['sessions/a.zip', packageFor('session-source')]])
+  const container = wrapContainer([['sessions/a.zip', packageFor('session-source')]])
   await h.post('archiveId=same', container)
   const { report } = await h.post('archiveId=same', container)
   check('duplicate flagged', report.duplicate === true)
@@ -209,7 +234,7 @@ function check(name, condition, detail = '') {
 {
   const h = harness()
   const bomb = buildZip([{ name: 'session.v4.jsonl', raw: Buffer.alloc(70 * 1024 * 1024), deflate: true }], { 'session.v4.jsonl': 1 })
-  const { status, report } = await h.post('', buildZip([['sessions/bomb.zip', bomb]]))
+  const { status, report } = await h.post('', wrapContainer([['sessions/bomb.zip', bomb]]))
   check('bomb rejected', status === 422)
   check('bomb reason names the limit', String(report.failed[0]?.reason).includes('exceeds'))
 }
@@ -218,7 +243,7 @@ function check(name, condition, detail = '') {
 {
   const h = harness()
   const bad = buildZip([{ name: 'session.v4.jsonl', raw: sessionLog('session-crc'), crc: 1 }])
-  const { status, report } = await h.post('', buildZip([['sessions/bad.zip', bad]]))
+  const { status, report } = await h.post('', wrapContainer([['sessions/bad.zip', bad]]))
   check('bad CRC rejected', status === 422)
   check('bad CRC reason', String(report.failed[0]?.reason).includes('CRC'))
 }
@@ -227,7 +252,7 @@ function check(name, condition, detail = '') {
 {
   const h = harness()
   const good = packageFor('session-trunc')
-  const { status, report } = await h.post('', buildZip([['sessions/t.zip', good.subarray(0, good.length - 10)]]))
+  const { status, report } = await h.post('', wrapContainer([['sessions/t.zip', good.subarray(0, good.length - 10)]]))
   check('truncated rejected', status === 422)
   check('truncated reason', String(report.failed[0]?.reason).includes('central directory'))
 }
@@ -235,7 +260,7 @@ function check(name, condition, detail = '') {
 // 6. subagent depth, parent link, and unknown preset
 {
   const h = harness()
-  const container = buildZip([['sessions/c.zip', packageFor('session-parent', {
+  const container = wrapContainer([['sessions/c.zip', packageFor('session-parent', {
     header: { agentPreset: 'unknown-preset' },
     child: { id: 'session-child', depth: 2 },
   })]])
@@ -250,7 +275,7 @@ function check(name, condition, detail = '') {
 // 7. unsupported image format is stored as a file
 {
   const h = harness()
-  const container = buildZip([['sessions/d.zip', packageFor('session-avif', {
+  const container = wrapContainer([['sessions/d.zip', packageFor('session-avif', {
     attachments: [['media/pic.avif', Buffer.from([0, 0, 0, 0x1c, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66])]],
   })]])
   const { report } = await h.post('', container)
@@ -275,7 +300,7 @@ function check(name, condition, detail = '') {
     { type: 'session-log-deepseek/delivery-accepted', seq: 2, time: 1700000000003, data: { sessionId: 'session-fork' } },
   ]
   const log = [header, ...events].map((value) => JSON.stringify(value)).join('\n') + '\n'
-  const container = buildZip([['sessions/f.zip', buildZip([{ name: 'session.v4.jsonl', raw: log }])]])
+  const container = wrapContainer([['sessions/f.zip', buildZip([{ name: 'session.v4.jsonl', raw: log }])]])
   const { report } = await h.post('', container)
   check('fork restored', report.restored.length === 1)
   check('seeded header preserved', h.writes[0]?.isSeeded === true)
@@ -296,4 +321,93 @@ function check(name, condition, detail = '') {
 }
 
 console.log(failures === 0 ? '\nall tests passed' : `\n${failures} test(s) failed`)
+// 11. the container manifest is a gate, not decoration
+{
+  const h = harness()
+  const missing = buildZip([['sessions/a.zip', packageFor('session-no-manifest')]])
+  const { status, report } = await h.post('', missing)
+  check('missing manifest rejected', status === 422 && String(report.failed[0]?.reason).includes('manifest'))
+}
+{
+  const h = harness()
+  const bad = wrapContainer([['sessions/a.zip', packageFor('session-future')]], { schema: 99 })
+  const { status, report } = await h.post('', bad)
+  check('newer schema rejected', status === 422 && String(report.failed[0]?.reason).includes('newer'))
+}
+
+// 12. a header without a usable createdAt fails alone instead of inventing "now"
+{
+  const h = harness()
+  const bad = wrapContainer([['sessions/a.zip', packageFor('session-time', { header: { createdAt: 'yesterday' } })]])
+  const { report } = await h.post('', bad)
+  check('invalid createdAt reported', report.restored.length === 0 && String(report.failed[0]?.reason).includes('createdAt'))
+}
+
+// 13. the restored log is read back to its full length
+{
+  const h = harness()
+  const { report } = await h.post('', wrapContainer([['sessions/a.zip', packageFor('session-verify')]]))
+  check('full log verified', String(report.restored[0]?.verify).startsWith('readable:'))
+}
+
+// 14. an attachment id that changes is reported, not hidden
+{
+  const h = harness({ imageId: 'sha256:0000000000000000000000000000000000000000000000000000000000000000' })
+  const media = [['media/sha256:1111111111111111111111111111111111111111111111111111111111111111.png', Buffer.from([0x89, 0x50, 0x4e, 0x47, 1])]]
+  const { report } = await h.post('', wrapContainer([['sessions/a.zip', packageFor('session-attach', { attachments: media })]]))
+  check('attachment id mismatch reported', report.attachments.idMismatch.length === 1)
+}
+
+// 15. a child exported alone becomes a root, not a parentless child
+{
+  const h = harness()
+  const orphan = packageFor('session-orphan', { header: { parentSession: 'missing-parent', delegationDepth: 2 } })
+  const { report } = await h.post('', wrapContainer([['sessions/a.zip', orphan]]))
+  check('orphan marked', report.restored[0]?.parentMissing === true)
+  check('orphan depth reset', h.writes[0]?.delegationDepth === 0)
+}
+
+// 16. packages beyond the limit are reported, never dropped silently
+{
+  const h = harness()
+  const pairs = []
+  for (let index = 0; index < 501; index += 1) {
+    pairs.push([`sessions/s${index}.zip`, packageFor(`session-limit-${index}`)])
+  }
+  const { report } = await h.post('', wrapContainer(pairs))
+  check('limit reported', report.skipped.length === 1)
+  check('limit restores the first 500', report.restored.length === 500)
+}
+
+// 17. archive ids survive the process
+{
+  const h = harness()
+  const { report } = await h.post('archiveId=archive-persisted', wrapContainer([['sessions/a.zip', packageFor('session-persist')]]))
+  check('persisted import happens', report.restored.length === 1)
+  const state = JSON.parse(readFileSync(join(process.env.DSH_EXPORT_CENTER_STATE_DIR, 'imports.json'), 'utf8'))
+  check('archive id persisted', state.entries.some(([id]) => id === 'archive-persisted'))
+}
+
+// 18. client-side guarantees that only exist in the browser bundle
+{
+  const client = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  const match = client.match(/function sameSample\(left, right\) \{[\s\S]*?\n    \}/)
+  check('sameSample shipped', match !== null)
+  if (match !== null) {
+    const sameSample = new Function(`${match[0]}\nreturn sameSample`)()
+    const base = new Uint8Array(256)
+    for (let index = 0; index < base.length; index += 1) base[index] = index % 251
+    const copy = base.slice()
+    const middle = base.slice()
+    middle[128] = 0
+    check('sameSample accepts equal bytes', sameSample(base, copy))
+    check('sameSample rejects a middle change', !sameSample(base, middle))
+    check('sameSample rejects a shorter array', !sameSample(base, base.subarray(0, 255)))
+  }
+  check('watermark advances only on a clean run', client.includes('if (failures.length === 0 && skipped.length === 0)'))
+  check('password policy shipped', client.includes('encryptTooShort'))
+  check('plaintext and untrusted notices shipped', client.includes('plaintextHint') && client.includes('importUntrusted'))
+}
+
+console.log(failures === 0 ? 'all tests passed' : `${failures} test(s) failed`)
 process.exit(failures === 0 ? 0 : 1)

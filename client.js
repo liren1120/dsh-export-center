@@ -32,7 +32,7 @@ window.__ModuleLoader__.load({
      * release. The served bundle is the only file the Host guarantees it can
      * reach, so the version travels inside it rather than in a side asset.
      */
-    const BUILD_VERSION = '0.6.1'
+    const BUILD_VERSION = '0.7.0'
 
     const zh = {
       panel: '导出中心',
@@ -76,6 +76,10 @@ window.__ModuleLoader__.load({
       encryptMismatch: '两次输入的密码不一致，未导出',
       encryptShow: '显示密码',
       encryptWarning: '密码无法找回：忘记就永远打不开。请先小批量试导入一次。',
+      encryptTooShort: '密码至少 8 位',
+      plaintextHint: '未设置密码时导出为明文，包含全部对话与附件',
+      importUntrusted: '归档来自外部，内容会作为会话历史被后续对话读取；只导入你信任的文件',
+      inventoryUntrusted: '清单来自外部归档，安装前确认每个 spec 都来自你信任的来源',
       encryptHint: '填写密码后导出为 .dshbak 加密包，导入时需要同一密码',
       passwordTitle: '这个归档已加密，请输入密码',
       passwordConfirm: '解密并导入',
@@ -215,6 +219,10 @@ window.__ModuleLoader__.load({
       encryptMismatch: 'The passwords do not match; nothing was exported',
       encryptShow: 'Show password',
       encryptWarning: 'The password cannot be recovered. Test an import on a small batch first.',
+      encryptTooShort: 'The password needs at least 8 characters',
+      plaintextHint: 'Without a password the export is plain text, including every message and attachment',
+      importUntrusted: 'This archive came from outside; its content becomes Session history. Import only files you trust',
+      inventoryUntrusted: 'This inventory came from an outside archive; install only specs you trust',
       encryptHint: 'With a password the export becomes an encrypted .dshbak package; the same password is needed to import it',
       passwordTitle: 'This archive is encrypted; enter its password',
       passwordConfirm: 'Decrypt and import',
@@ -665,6 +673,18 @@ window.__ModuleLoader__.load({
         offset += chunk.length
       }
       return out
+    }
+
+    /** Compare length and boundary samples of two byte arrays. */
+    function sameSample(left, right) {
+      if (left.length !== right.length) return false
+      const span = 64
+      for (const start of [0, Math.max(0, (left.length >> 1) - 32), Math.max(0, left.length - span)]) {
+        for (let index = start; index < Math.min(start + span, left.length); index += 1) {
+          if (left[index] !== right[index]) return false
+        }
+      }
+      return true
     }
 
     /**
@@ -1221,6 +1241,10 @@ window.__ModuleLoader__.load({
               setSessionMessage({ kind: 'error', text: t('encryptMismatch') })
               return
             }
+            if (encryptPassword.length < 8) {
+              setSessionMessage({ kind: 'error', text: t('encryptTooShort') })
+              return
+            }
           }
           let ids = Array.from(selected)
           if (incremental && lastExportAt > 0) {
@@ -1325,7 +1349,7 @@ window.__ModuleLoader__.load({
             try {
               payload = await encryptArchive(archive, encryptPassword)
               const selfCheck = await decryptArchive(payload, encryptPassword)
-              if (selfCheck.length !== archive.length) throw new Error('encryption self-check failed')
+              if (!sameSample(selfCheck, archive)) throw new Error('encryption self-check failed')
               extension = 'dshbak'
               encrypted = true
             } catch (failure) {
@@ -1337,15 +1361,18 @@ window.__ModuleLoader__.load({
               return
             }
           }
-          const stamp = `${started.getFullYear()}${String(started.getMonth() + 1).padStart(2, '0')}${String(started.getDate()).padStart(2, '0')}-${String(started.getHours()).padStart(2, '0')}${String(started.getMinutes()).padStart(2, '0')}`
+          const stamp = `${started.getFullYear()}${String(started.getMonth() + 1).padStart(2, '0')}${String(started.getDate()).padStart(2, '0')}-${String(started.getHours()).padStart(2, '0')}${String(started.getMinutes()).padStart(2, '0')}${String(started.getSeconds()).padStart(2, '0')}`
           const prefix = locale === 'zh' ? '会话备份' : 'session-backup'
+
           const name = saveBinary(payload, `${prefix}-${stamp}.${extension}`, encrypted ? 'application/octet-stream' : 'application/zip')
-          try {
-            window.localStorage.setItem('dsh-export-center:last-export', String(started.getTime()))
-          } catch (error) {
-            // Storage can be unavailable; the timestamp is a convenience only.
+          if (failures.length === 0 && skipped.length === 0) {
+            try {
+              window.localStorage.setItem('dsh-export-center:last-export', String(started.getTime()))
+            } catch (error) {
+              // Storage can be unavailable; the timestamp is a convenience only.
+            }
+            setLastExportAt(started.getTime())
           }
-          setLastExportAt(started.getTime())
           setSessionBusy(null)
           setSessionMessage({
             kind: failures.length > 0 || skipped.length > 0 ? 'error' : 'info',
@@ -1533,6 +1560,7 @@ window.__ModuleLoader__.load({
         const sourcePath = selfBundle && typeof selfBundle.source === 'string' ? selfBundle.source : ''
 
         const planItems = importPlan ? importPlan.items : []
+        const planWarning = planItems.length > 0 ? t('inventoryUntrusted') : null
         // Only rows that carry a checkbox are "actionable"; different/manual
         // rows are shown for context and counted separately.
         const planActionable = planItems.filter((item) => item.state === 'install'
@@ -1592,6 +1620,7 @@ window.__ModuleLoader__.load({
           importPlan ? h('div', null,
             h('p', { style: styles.hint }, `${t('importPlan')}: ${importPlan.fileName}`
               + (planPending.length > 0 ? ` · ${planPending.length} ${t('planSelected')}` : '')),
+            planWarning === null ? null : h('p', { style: styles.danger }, planWarning),
             planActionable.length === 0
               ? h('p', { style: styles.hint }, t('importEmpty'))
               : h('div', { style: styles.list }, planVisible.map(planRow)),
@@ -1857,8 +1886,10 @@ window.__ModuleLoader__.load({
               ? h('span', { style: styles.danger }, t('encryptMismatch'))
               : null,
             encryptPassword === ''
-              ? null
+              ? h('span', { style: styles.hint }, t('plaintextHint'))
               : h('span', { style: styles.hint }, t('encryptWarning')),
+
+            h('span', { style: styles.hint }, t('importUntrusted')),
 
             h('input', {
               type: 'file',

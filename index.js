@@ -15,6 +15,9 @@
  * deliberately declares no dependency.
  */
 import { randomUUID } from 'node:crypto'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { Unzip, UnzipInflate, UnzipPassThrough } from './vendor/fflate.mjs'
 
 /** Absolute path of the archive upload route. */
@@ -37,6 +40,9 @@ const MAX_REMEMBERED_ARCHIVES = 500
 
 /** Most Session logs one import writes. */
 const MAX_SESSIONS = 500
+
+/** Newest container manifest schema this build understands. */
+const MANIFEST_SCHEMA = 2
 
 /** Most events one Session log may carry. */
 const MAX_EVENTS = 500000
@@ -90,6 +96,33 @@ export function apply(ctx) {
 
 /** Archive ids this Host process has already restored, so a repeat import can be reported. */
 const importedArchives = new Map()
+const STATE_DIR = process.env.DSH_EXPORT_CENTER_STATE_DIR ?? join(homedir(), '.dsh', 'export-center')
+const STATE_FILE = join(STATE_DIR, 'imports.json')
+
+/** Best-effort load of the archive ids that were already imported. */
+function loadImportedArchives() {
+  try {
+    const value = JSON.parse(readFileSync(STATE_FILE, 'utf8'))
+    if (!Array.isArray(value.entries)) return
+    for (const entry of value.entries) {
+      if (Array.isArray(entry) && typeof entry[0] === 'string' && typeof entry[1] === 'number') importedArchives.set(entry[0], entry[1])
+    }
+  } catch (error) {
+    // A missing or damaged state file only loses duplicate detection.
+  }
+}
+
+/** Best-effort save of the archive ids seen so far. */
+function persistImportedArchives() {
+  try {
+    mkdirSync(STATE_DIR, { recursive: true })
+    writeFileSync(STATE_FILE, JSON.stringify({ entries: [...importedArchives].slice(-1000) }))
+  } catch (error) {
+    // The import already succeeded; detection is a convenience.
+  }
+}
+
+loadImportedArchives()
 
 /** The one running import, so a second browser cannot interleave writes. */
 let activeImport = null
@@ -128,6 +161,7 @@ async function importArchive(ctx, request) {
       const oldest = importedArchives.keys().next().value
       importedArchives.delete(oldest)
     }
+    persistImportedArchives()
   }
   const restored = report.restored.length
   return jsonResponse(restored === 0 ? 422 : 200, report)
@@ -148,22 +182,33 @@ async function restoreArchive(ctx, container, options = {}) {
   const workspaces = ctx.workspaceRegistry.list()
   const presets = await knownPresetIds(ctx)
   const innerNames = [...outer.keys()].filter(name => /\.zip$/i.test(name)).sort()
+  const manifest = readManifest(outer)
   const report = {
     kind: 'dsh-export-center/import',
     archiveId: options.archiveId,
     duplicate: options.archiveId !== undefined && importedArchives.has(options.archiveId),
+    manifest: manifest.ok ? manifest.info : null,
     restored: [],
     failed: [],
-    attachments: { images: 0, files: 0, failed: [], converted: [] },
+    skipped: [],
+    attachments: { images: 0, files: 0, failed: [], converted: [], idMismatch: [] },
     sessions: [],
+  }
+  if (!manifest.ok) {
+    report.failed.push({ entry: 'manifest.json', reason: manifest.reason })
+    return report
   }
   if (innerNames.length === 0) {
     report.failed.push({ entry: 'archive', reason: 'no session package found' })
     return report
   }
 
-  const roots = []
-  for (const name of innerNames.slice(0, MAX_SESSIONS)) {
+  const limit = Math.min(innerNames.length, MAX_SESSIONS)
+  for (const name of innerNames.slice(limit)) {
+    report.skipped.push({ entry: name, reason: `over the ${MAX_SESSIONS}-package limit` })
+  }
+
+  for (const name of innerNames.slice(0, limit)) {
     let inner
     try {
       inner = readZip(outer.get(name), name)
@@ -171,15 +216,14 @@ async function restoreArchive(ctx, container, options = {}) {
       report.failed.push({ entry: name, reason: messageOf(error) })
       continue
     }
-    const parsed = parseInnerPackage(inner, name)
-    if (parsed.error !== undefined) {
-      report.failed.push({ entry: name, reason: parsed.error })
+    const root = parseInnerPackage(inner, name)
+    // Release the package bytes before the persistence work: a container may
+    // hold hundreds of packages and only one is needed at a time.
+    inner = undefined
+    if (root.error !== undefined) {
+      report.failed.push({ entry: name, reason: root.error })
       continue
     }
-    roots.push(parsed)
-  }
-
-  for (const root of roots) {
     try {
       const source = root.header
       const target = chooseWorkspace(workspaces, source.cwd, options.workspaceId)
@@ -199,14 +243,22 @@ async function restoreArchive(ctx, container, options = {}) {
       root.children.forEach((child, index) => idMap.set(child.header.id, childIds[index]))
       rewriteSessionRefs(root.events, idMap, seeded ? inherited : 0)
 
+      const createdAt = validTime(source.createdAt)
+      if (createdAt === undefined) {
+        report.failed.push({ entry: root.name, reason: 'session header has no usable createdAt' })
+        continue
+      }
       const header = {
         version: SESSION_FORMAT_VERSION,
         id: rootId,
-        createdAt: finiteTime(source.createdAt),
+        createdAt,
         cwd: target === undefined ? undefined : target.workspace.path,
         isSeeded: seeded,
       }
-      if (typeof source.delegationDepth === 'number' && Number.isSafeInteger(source.delegationDepth)) {
+      const parentMissing = source.parentSession !== undefined && !idMap.has(source.parentSession)
+      if (parentMissing) {
+        header.delegationDepth = 0
+      } else if (typeof source.delegationDepth === 'number' && Number.isSafeInteger(source.delegationDepth)) {
         header.delegationDepth = Math.max(0, source.delegationDepth)
       }
       const presetDropped = typeof source.agentPreset === 'string' && source.agentPreset !== ''
@@ -223,7 +275,7 @@ async function restoreArchive(ctx, container, options = {}) {
         })
         continue
       }
-      const verified = await verifySession(persistence, header.id)
+      const verified = await verifySession(persistence, header.id, root.events.length)
       if (target !== undefined) {
         try {
           await target.workspace.attachSession(header.id)
@@ -241,7 +293,7 @@ async function restoreArchive(ctx, container, options = {}) {
         const childHeader = {
           version: SESSION_FORMAT_VERSION,
           id: childIds[index],
-          createdAt: finiteTime(child.header.createdAt),
+          createdAt: validTime(child.header.createdAt) ?? createdAt,
           cwd: header.cwd,
           isSeeded: childSeeded,
           parentSession: idMap.get(child.header.parentSession) ?? header.id,
@@ -267,6 +319,7 @@ async function restoreArchive(ctx, container, options = {}) {
         subagents: children,
         attachments: restoredRefs,
         presetDropped,
+        parentMissing,
         workspace: targetInfo,
         verify: verified,
       })
@@ -345,12 +398,21 @@ function rewriteSessionRefs(events, idMap, offset = 0) {
  * @param id - the written Session id.
  * @returns `'readable'`, or the failure text.
  */
-async function verifySession(persistence, id) {
+async function verifySession(persistence, id, expected) {
   let reader
   try {
     reader = await persistence.open(id, 'read')
-    const result = await reader.read(0, 10)
-    const count = Array.isArray(result.events) ? result.events.length : -1
+    let offset = 0
+    let count = 0
+    for (;;) {
+      const result = await reader.read(offset, 5000)
+      const events = Array.isArray(result.events) ? result.events : []
+      if (events.length === 0) break
+      count += events.length
+      offset += events.length
+      if (count > expected) break
+    }
+    if (count !== expected) return `unreadable: ${count}/${expected} events`
     return `readable:${count}`
   } catch (error) {
     return `unreadable: ${messageOf(error)}`
@@ -381,7 +443,12 @@ async function restoreAttachments(attachments, entries, counters) {
         const mediaType = mediaTypeOf(name, bytes)
         if (mediaType !== undefined) {
           try {
-            await attachments.saveImage({ data: bytes, mediaType, name: base })
+            const saved = await attachments.saveImage({ data: bytes, mediaType, name: base })
+            const expectedId = base.includes('.') ? base.slice(0, base.lastIndexOf('.')) : base
+            if (saved !== undefined && saved !== null && typeof saved.id === 'string'
+              && saved.id !== base && saved.id !== expectedId) {
+              counters.idMismatch.push({ entry: name, expected: expectedId, received: saved.id })
+            }
             counters.images += 1
             result.images += 1
             continue
@@ -602,9 +669,9 @@ function sessionId() {
  * @param value - candidate timestamp.
  * @returns the timestamp when valid, otherwise the current time.
  */
-function finiteTime(value) {
+function validTime(value) {
   if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return value
-  return Date.now()
+  return undefined
 }
 
 /**
@@ -619,6 +686,41 @@ function finiteTime(value) {
  * @param name - archive label used in diagnostics.
  * @returns entry name to uncompressed bytes.
  */
+/**
+ * Validate the container manifest before any Session is written.
+ * A newer schema is refused rather than guessed at.
+ * @param outer - container entries.
+ * @returns validation result and the facts worth reporting.
+ */
+function readManifest(outer) {
+  const bytes = outer.get('manifest.json')
+  if (bytes === undefined) return { ok: false, reason: 'manifest.json is missing' }
+  let value
+  try {
+    value = JSON.parse(new TextDecoder().decode(bytes))
+  } catch (error) {
+    return { ok: false, reason: `manifest.json is not valid JSON: ${messageOf(error)}` }
+  }
+  if (value === null || typeof value !== 'object') return { ok: false, reason: 'manifest.json is not an object' }
+  if (value.kind !== 'dsh-export-center/sessions') {
+    return { ok: false, reason: `unsupported archive kind: ${String(value.kind)}` }
+  }
+  if (!Number.isSafeInteger(value.schema) || value.schema < 1) {
+    return { ok: false, reason: 'manifest.json has no integer schema' }
+  }
+  if (value.schema > MANIFEST_SCHEMA) {
+    return { ok: false, reason: `archive schema ${value.schema} is newer than this plugin supports (${MANIFEST_SCHEMA})` }
+  }
+  return {
+    ok: true,
+    info: {
+      schema: value.schema,
+      exportedAt: typeof value.exportedAt === 'string' ? value.exportedAt : null,
+      sessions: Array.isArray(value.sessions) ? value.sessions.length : null,
+      tool: typeof value.tool === 'object' && value.tool !== null ? value.tool : null,
+    },
+  }
+}
 function readZip(bytes, name = 'archive') {
   const crcByName = zipCrcMap(bytes)
   if (crcByName === undefined) throw new Error(`${name}: missing or damaged central directory`)

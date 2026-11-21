@@ -79,9 +79,10 @@ carries `tool`, `app`, `locale`, `exportedAt` with a UTC offset, `timeZone`,
 ## Limits
 
 256 MB upload, 64 MB per archive entry, 512 MB inflated per import, 500 Session
-logs, 500 000 events per log, 200 MB per export batch. An archive without a
-readable central directory, a CRC mismatch, or an over-limit entry fails only
-that package. Only one import runs at a time (a second answers `409`). Both
+logs, 500 000 events per log, 200 MB per export batch; packages beyond the
+500-package limit are reported as skipped. An archive without a readable
+central directory, a CRC mismatch, or an over-limit entry fails only that
+package. Only one import runs at a time (a second answers `409`). Both
 operations can be cancelled.
 
 ## Encrypted exports
@@ -104,6 +105,37 @@ and checks the Host half against honest input, a decompression bomb, a bad
 CRC, a truncated archive, duplicate imports, subagent depth, attachment
 fallback, and a seeded fork. A separate check extracts the encryption helpers
 from `client.js` and covers the `.dshbak` round trip and a wrong password.
+
+## Security and trust
+
+- Exports are **plain text unless you set a password**. They carry every message
+  and attachment of the selected Sessions.
+- An imported archive is **untrusted input**: its text becomes Session history
+  that later turns read, and its plugin inventory can request installs. Import
+  only files you trust and read the spec list before applying it.
+- The Host never edits existing logs and never writes settings or credentials.
+
+## Upgrade from earlier builds
+
+Earlier builds used the bundle name `@local/dsh-export-center` (or
+`dsh-export-center`) with the same row id `export-center`. Remove that bundle
+before installing `dsh-export-center-plugin`, then restart DSH; two bundles with
+one row id cannot be enabled together.
+
+## Development
+
+The Host suite ships with the package and runs anywhere Node is available:
+
+```sh
+node test/run.mjs
+```
+
+These two only exist in a checkout:
+
+```sh
+node tools/verify.mjs  # version + packaged files + docs + market + suite
+node tools/build.mjs   # deterministic archive and SHA-256 in dist/
+```
 
 ## License
 

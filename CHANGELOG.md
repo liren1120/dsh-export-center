@@ -1,6 +1,41 @@
 # Changelog
 
+## 0.7.0
+
+Hardening: the silent-failure paths from 0.6.x are gone.
+
+- **Incremental exports cannot skip silently.** The watermark advances only
+  after a run with no failures and no skipped Sessions; previously one failed
+  Session was excluded from every later "New only" export.
+- **Package overflow is reported.** A container with more than 500 Session
+  packages now lists the rest under `skipped` instead of dropping them.
+- **The manifest is a gate.** `manifest.json` must exist, name
+  `dsh-export-center/sessions`, and carry a schema this build understands; a
+  newer schema is refused with a clear reason instead of guessed at.
+- **Verification reads the whole log.** Every restored Session is re-opened and
+  read to its last event, and the count must match what was written.
+- **Damaged headers fail alone.** A header without a usable `createdAt` is a
+  reported failure, not a Session stamped with the current time.
+- **A child exported alone becomes a root.** When its parent is not in the
+  archive the restored Session gets `delegationDepth: 0` and `parentMissing`.
+- **Attachment ids are checked.** If the attachment store returns a different
+  id than the archive named, the report lists it under `idMismatch`.
+- **Duplicate detection survives restarts.** Archive ids are persisted under
+  `~/.dsh/export-center/imports.json` (override with
+  `DSH_EXPORT_CENTER_STATE_DIR`).
+- **Import holds one package at a time**, so a 500-Session container no longer
+  keeps every attachment in memory at once.
+- **Password policy.** Encryption requires at least 8 characters; the
+  round-trip self-check compares boundary bytes, not just length.
+- **Plain-text and untrusted-input notices.** The panel says when an export is
+  unencrypted, that imported archives become Session history, and that an
+  imported plugin inventory comes from outside.
+- **Reproducible build and a consistency gate.** `node tools/build.mjs` writes
+  a deterministic archive plus SHA-256; `node tools/verify.mjs` checks version
+  coherence, packaged files, docs, the market index, and runs the suite.
+
 ## 0.6.1
+
 
 Fixes 0.6.0, which shipped a single password field.
 
