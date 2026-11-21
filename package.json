@@ -1,6 +1,6 @@
 {
     "name":  "dsh-export-center-plugin",
-    "version":  "0.8.0",
+    "version":  "0.9.0",
     "type":  "module",
     "description":  "Batch-export DeepSeek Harness Sessions as restorable archives and move plugin inventories between machines. Requires DSH 0.2.2-rc.5 or newer and below 0.3.0.",
     "license":  "MIT",
@@ -57,7 +57,14 @@
                                           ]
                            }
             },
+    "devDependencies":  {
+                            "@types/node":  "^22.20.5",
+                            "typescript":  "5.9.3"
+                        },
     "scripts":  {
-                    "test":  "node test/run.mjs"
+                    "test":  "node test/run.mjs",
+                    "typecheck":  "tsc -p tsconfig.json",
+                    "verify":  "node tools/verify.mjs",
+                    "build":  "node tools/build.mjs"
                 }
 }

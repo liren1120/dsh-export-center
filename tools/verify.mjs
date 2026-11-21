@@ -49,6 +49,17 @@ if (process.env.RELEASE === '1') {
 check('market commit is pinned', typeof latest?.source?.commit === 'string' && /^[0-9a-f]{40}$/.test(latest.source.commit))
 check('market engine range stated', String(market.plugins?.[0]?.description?.en ?? '').includes('0.2.2-rc.5'))
 
+const tsc = join(root, 'node_modules/typescript/bin/tsc')
+if (existsSync(tsc)) {
+  try {
+    execFileSync(process.execPath, [tsc, '-p', join(root, 'tsconfig.json')], { cwd: root, stdio: 'inherit' })
+    check('typecheck', true)
+  } catch (error) {
+    check('typecheck', false, 'tsc reported errors')
+  }
+} else {
+  console.log('info dev dependencies are absent; skipping typecheck')
+}
 const workspace = join(root, '..', '..')
 let realArchive = process.env.DSH_EXPORT_CENTER_REAL_ARCHIVE
 if (realArchive === undefined) {

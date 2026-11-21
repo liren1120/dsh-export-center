@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { createRequire } from 'module';
 var require = createRequire('/');
 // DEFLATE is a complex format; to read this code, you should probably check the RFC first:

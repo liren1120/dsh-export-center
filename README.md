@@ -132,11 +132,13 @@ The Host suite ships with the package and runs anywhere Node is available:
 node test/run.mjs
 ```
 
-These two only exist in a checkout:
+These only exist in a checkout (they need the dev dependencies):
 
 ```sh
-node tools/verify.mjs  # version + packaged files + docs + market + suite
-node tools/build.mjs   # deterministic archive and SHA-256 in dist/
+npm install
+npm run typecheck     # tsc -p tsconfig.json (checkJs over the Host half)
+npm run verify        # typecheck + version + files + docs + market + suite
+npm run build         # deterministic archive and SHA-256 in dist/
 ```
 
 ## License

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.9.0
+
+The TypeScript track starts with a gate, not a rewrite.
+
+- **The Host half is type-checked.** `tsconfig.json` runs `checkJs` over
+  `index.js` with `@types/node`; `npm run typecheck` and `tools/verify.mjs` both
+  fail on a type error. The vendored `fflate` carries a `@ts-nocheck` banner
+  (code unchanged) because it is minified library output.
+- **Dev toolchain declared.** `typescript` and `@types/node` are dev
+  dependencies; the published package stays dependency-free.
+- **No runtime change.** Same `index.js` source and same behaviour; this release
+  is the safety net the later `.ts` conversion and module split will lean on.
+
 ## 0.8.0
 
 Rollback, inventory trust, and a real-archive regression.
