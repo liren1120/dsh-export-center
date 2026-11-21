@@ -40,6 +40,13 @@ for (const item of ['index.js', 'client.js', 'vendor/fflate.mjs', 'test/run.mjs'
 check('files lists test', Array.isArray(pkg.files) && pkg.files.includes('test'))
 check('files lists vendor', Array.isArray(pkg.files) && pkg.files.includes('vendor'))
 
+const entry = market.plugins?.[0]
+const categories = market.metadata?.categories ?? {}
+check('market entry declares a category', typeof entry?.metadata?.category === 'string')
+if (typeof entry?.metadata?.category === 'string') {
+  check('market category is declared', Object.hasOwn(categories, entry.metadata.category))
+  check('market category has an English title', typeof categories[entry.metadata.category]?.title?.en === 'string')
+}
 const latest = market.plugins?.[0]?.versions?.[0]
 if (process.env.RELEASE === '1') {
   check('market lists this version', latest?.version === pkg.version, `${latest?.version} vs ${pkg.version}`)
