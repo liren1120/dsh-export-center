@@ -144,6 +144,18 @@ npm run build         # emit index.js, then a deterministic archive in dist/
 The Host half lives in `index.ts`; `index.js` is its committed build artifact,
 so an install never needs a compiler.
 
+## Source layout
+
+- `src/index.ts` — plugin assembly: route registration and services.
+- `src/host/` — `constants`, `util`, `zip` (reader, CRC, manifest), `state`,
+  `attachments`.
+- `src/client/client.js` — the browser half.
+- `src/vendor/fflate.mjs` — vendored library source.
+
+`index.js`, `client.js`, `host/*.js`, and `vendor/fflate.mjs` are committed
+build artifacts. `npm run build` rebuilds them; `npm run verify` fails when any
+of them differs from `src/`.
+
 ## License
 
 MIT.

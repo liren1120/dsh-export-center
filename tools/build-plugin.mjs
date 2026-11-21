@@ -1,16 +1,16 @@
 /**
- * Compile the TypeScript host source into the shipped `index.js`.
+ * Compile the TypeScript host source into the shipped JavaScript.
  *
- *   node tools/build-plugin.mjs          emit and write index.js
- *   node tools/build-plugin.mjs --check  fail when index.js is out of date
+ *   node tools/build-plugin.mjs          emit index.js, host/*.js, vendor/fflate.mjs
+ *   node tools/build-plugin.mjs --check  fail when any committed artifact is stale
  *
- * The compiler is the repository's dev dependency; the emitted file is
- * committed so an install never needs a build step.
+ * The compiler is a dev dependency; the emitted files are committed so an
+ * install never needs a build step.
  */
 import { execFileSync } from 'node:child_process'
-import { copyFileSync, mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -20,24 +20,51 @@ if (!existsSync(tsc)) {
   process.exit(1)
 }
 
+const checkOnly = process.argv.includes('--check')
 const outDir = mkdtempSync(join(tmpdir(), 'export-center-build-'))
+let stale = 0
+let written = 0
+
+function compareOrCopy(source, target) {
+  const bytes = readFileSync(source)
+  if (checkOnly) {
+    const current = existsSync(target) ? readFileSync(target) : undefined
+    if (current === undefined || !current.equals(bytes)) {
+      console.error(`stale ${relative(root, target)}`)
+      stale += 1
+    }
+    return
+  }
+  mkdirSync(dirname(target), { recursive: true })
+  copyFileSync(source, target)
+  written += 1
+}
+
 try {
   execFileSync(process.execPath, [tsc, '-p', join(root, 'tsconfig.build.json'), '--outDir', outDir], {
     cwd: root,
     stdio: 'inherit',
   })
-  const emitted = readFileSync(join(outDir, 'index.js'))
-  const target = join(root, 'index.js')
-  if (process.argv.includes('--check')) {
-    const current = existsSync(target) ? readFileSync(target) : undefined
-    if (current === undefined || !current.equals(emitted)) {
-      console.error('index.js is out of date; run node tools/build-plugin.mjs')
+  for (const name of readdirSync(outDir).sort()) {
+    const path = join(outDir, name)
+    if (name.endsWith('.js')) compareOrCopy(path, join(root, name))
+    else if (name === 'host') {
+      for (const entry of readdirSync(path).sort()) {
+        if (entry.endsWith('.js')) compareOrCopy(join(path, entry), join(root, 'host', entry))
+      }
+    }
+  }
+  compareOrCopy(join(root, 'src', 'vendor', 'fflate.mjs'), join(root, 'vendor', 'fflate.mjs'))
+  compareOrCopy(join(root, 'src', 'client', 'client.js'), join(root, 'client.js'))
+
+  if (checkOnly) {
+    if (stale > 0) {
+      console.error(`${stale} artifact(s) are out of date; run node tools/build-plugin.mjs`)
       process.exit(1)
     }
-    console.log('index.js matches index.ts')
+    console.log('committed artifacts match src/')
   } else {
-    copyFileSync(join(outDir, 'index.js'), target)
-    console.log(`index.js emitted (${emitted.length} bytes)`)
+    console.log(`emitted ${written} artifact(s)`)
   }
 } finally {
   rmSync(outDir, { recursive: true, force: true })

@@ -9,7 +9,8 @@
     "skipLibCheck": true,
     "allowJs": false,
     "noEmit": true,
+    "rootDir": "src",
     "types": ["node"]
   },
-  "include": ["index.ts"]
+  "include": ["src/**/*.ts"]
 }

@@ -6,5 +6,5 @@
     "declaration": false,
     "removeComments": false
   },
-  "include": ["index.ts"]
+  "include": ["src/**/*.ts"]
 }

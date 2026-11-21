@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.0
+
+First stable release; the source is now split and both halves are build artifacts.
+
+- **Host modules.** `src/index.ts` only assembles the plugin; the logic lives in
+  `src/host/` — `constants`, `util`, `zip`, `manifest` (inside `zip`),
+  `state`, `attachments`. `tsc` emits `index.js` plus `host/*.js`, which are
+  committed.
+- **Client source too.** `src/client/client.js` is the source; the shipped
+  `client.js` is a build artifact.
+- **One build gate.** `tools/build-plugin.mjs` emits both artifacts (and
+  `vendor/fflate.mjs` from `src/vendor/`); `--check` fails when any committed
+  artifact differs from source, and `npm run verify` runs it before the suite.
+- **No behaviour change.** Same formats (`manifest.json` schema 2, `DSHENC1`)
+  and the same 61-check suite, now running against built artifacts.
+
 ## 0.10.0
 
 The Host half is now TypeScript source; `index.js` is a build artifact.

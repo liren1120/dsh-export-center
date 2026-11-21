@@ -47,7 +47,7 @@ function walk(directory) {
 }
 
 const include = [
-  'index.js', 'client.js', 'cordis.patch.yml', 'icon.svg', 'version.json',
+  'index.js', 'client.js', 'host', 'cordis.patch.yml', 'icon.svg', 'version.json',
   'package.json', 'README.md', 'LICENSE', 'CHANGELOG.md',
   'vendor', 'locale', 'docs', 'market', 'test',
 ]

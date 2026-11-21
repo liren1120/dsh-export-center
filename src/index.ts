@@ -19,30 +19,17 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { Unzip, UnzipInflate, UnzipPassThrough } from './vendor/fflate.mjs'
+import { MAX_UPLOAD_BYTES, MAX_ENTRY_BYTES, MAX_TOTAL_UNCOMPRESSED, MAX_REMEMBERED_ARCHIVES, MAX_SESSIONS, MAX_EVENTS, APPEND_BATCH, SESSION_FORMAT_VERSION, MANIFEST_SCHEMA } from './host/constants.js'
+import { messageOf, validTime, sessionId } from './host/util.js'
+import { CRC_TABLE, crc32, readZip, joinChunks, zipCrcMap, findEndOfCentralDirectory, readManifest } from './host/zip.js'
+import { STATE_DIR, STATE_FILE, importedArchives, loadImportedArchives, persistImportedArchives } from './host/state.js'
+import { IMAGE_TYPES, mediaTypeOf, restoreAttachments } from './host/attachments.js'
 
 /** Absolute path of the archive upload route. */
 const IMPORT_PATH = '/api/export-center.import'
 
 /** Absolute path of the workspace listing route. */
 const WORKSPACES_PATH = '/api/export-center.workspaces'
-
-/** Largest container archive accepted from the browser. */
-const MAX_UPLOAD_BYTES = 256 * 1024 * 1024
-
-/** Largest declared uncompressed size of one archive entry. */
-const MAX_ENTRY_BYTES = 64 * 1024 * 1024
-
-/** Largest total uncompressed bytes one import may inflate. */
-const MAX_TOTAL_UNCOMPRESSED = 512 * 1024 * 1024
-
-/** Most archive ids remembered for duplicate reporting. */
-const MAX_REMEMBERED_ARCHIVES = 500
-
-/** Most Session logs one import writes. */
-const MAX_SESSIONS = 500
-
-/** Newest container manifest schema this build understands. */
-const MANIFEST_SCHEMA = 2
 
 /** Options carried from the import request. */
 type ImportOptions = { workspaceId?: string; archiveId?: string }
@@ -58,24 +45,6 @@ type StoredHeader = {
   agentPreset?: string
   parentSession?: string
   origin?: string
-}
-
-/** Most events one Session log may carry. */
-const MAX_EVENTS = 500000
-
-/** Most events one persistence append writes. */
-const APPEND_BATCH = 200
-
-/** Current logical Session format version. */
-const SESSION_FORMAT_VERSION = 4
-
-/** Extensions accepted as image attachments, mapped to the media type. */
-const IMAGE_TYPES = {
-  png: 'image/png',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  webp: 'image/webp',
-  gif: 'image/gif',
 }
 
 /** Host services this bundle requires. */
@@ -108,34 +77,6 @@ export function apply(ctx) {
       return jsonResponse(200, body)
     },
   }), 'export-center: workspaces route')
-}
-
-/** Archive ids this Host process has already restored, so a repeat import can be reported. */
-const importedArchives = new Map()
-const STATE_DIR = process.env.DSH_EXPORT_CENTER_STATE_DIR ?? join(homedir(), '.dsh', 'export-center')
-const STATE_FILE = join(STATE_DIR, 'imports.json')
-
-/** Best-effort load of the archive ids that were already imported. */
-function loadImportedArchives() {
-  try {
-    const value = JSON.parse(readFileSync(STATE_FILE, 'utf8'))
-    if (!Array.isArray(value.entries)) return
-    for (const entry of value.entries) {
-      if (Array.isArray(entry) && typeof entry[0] === 'string' && typeof entry[1] === 'number') importedArchives.set(entry[0], entry[1])
-    }
-  } catch (error) {
-    // A missing or damaged state file only loses duplicate detection.
-  }
-}
-
-/** Best-effort save of the archive ids seen so far. */
-function persistImportedArchives() {
-  try {
-    mkdirSync(STATE_DIR, { recursive: true })
-    writeFileSync(STATE_FILE, JSON.stringify({ entries: [...importedArchives].slice(-1000) }))
-  } catch (error) {
-    // The import already succeeded; detection is a convenience.
-  }
 }
 
 loadImportedArchives()
@@ -471,80 +412,6 @@ async function verifySession(persistence, id, expected) {
 }
 
 /**
- * Re-save every attachment carried by one package.
- * @param attachments - optional attachment service.
- * @param entries - attachment bytes keyed by archive name.
- * @param counters - report counters updated in place.
- * @returns how many images and files were stored.
- */
-async function restoreAttachments(attachments, entries, counters) {
-  const result = { images: 0, files: 0 }
-  if (attachments === undefined) {
-    if (entries.length > 0) counters.failed.push({ entry: '(all)', reason: 'attachment service unavailable' })
-    return result
-  }
-  for (const [name, bytes] of entries) {
-    const base = name.slice(name.lastIndexOf('/') + 1)
-    try {
-      if (name.startsWith('media/')) {
-        const mediaType = mediaTypeOf(name, bytes)
-        if (mediaType !== undefined) {
-          try {
-            const saved = await attachments.saveImage({ data: bytes, mediaType, name: base })
-            const expectedId = base.includes('.') ? base.slice(0, base.lastIndexOf('.')) : base
-            if (saved !== undefined && saved !== null && typeof saved.id === 'string'
-              && saved.id !== base && saved.id !== expectedId) {
-              counters.idMismatch.push({ entry: name, expected: expectedId, received: saved.id })
-            }
-            counters.images += 1
-            result.images += 1
-            continue
-          } catch (error) {
-            // An image the store refuses (unknown or oversized format) is kept
-            // verbatim as a file so the bytes still travel with the Session.
-            await attachments.saveFile({ data: bytes, name: base })
-            counters.files += 1
-            result.files += 1
-            counters.converted.push({ entry: name, reason: messageOf(error) })
-            continue
-          }
-        }
-        await attachments.saveFile({ data: bytes, name: base })
-        counters.files += 1
-        result.files += 1
-        counters.converted.push({ entry: name, reason: 'unsupported image format; stored as a file' })
-      } else if (name.startsWith('files/')) {
-        await attachments.saveFile({ data: bytes, name: base })
-        counters.files += 1
-        result.files += 1
-      }
-    } catch (error) {
-      counters.failed.push({ entry: name, reason: messageOf(error) })
-    }
-  }
-  return result
-}
-
-/**
- * Detect a supported image media type from the entry name or its magic bytes.
- * @param name - archive entry name.
- * @param bytes - stored bytes.
- * @returns the media type, or undefined when the format is not one the image store accepts.
- */
-function mediaTypeOf(name, bytes) {
-  const extension = name.slice(name.lastIndexOf('.') + 1).toLowerCase()
-  if (IMAGE_TYPES[extension] !== undefined) return IMAGE_TYPES[extension]
-  if (bytes.length >= 8) {
-    if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'image/png'
-    if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg'
-    if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return 'image/gif'
-    if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46
-      && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return 'image/webp'
-  }
-  return undefined
-}
-
-/**
  * Parse one inner package: root log, root title, and subagent logs.
  * @param inner - entries of one exported Session ZIP.
  * @param name - container entry name, used in failures.
@@ -702,200 +569,6 @@ function samePath(left, right) {
   }
   return normalize(left) === normalize(right)
 }
-
-/**
- * A new durable Session id.
- * @returns `session-<uuid>`.
- */
-function sessionId() {
-  return `session-${randomUUID()}`
-}
-
-/**
- * Coerce a source timestamp to a non-negative safe integer.
- * @param value - candidate timestamp.
- * @returns the timestamp when valid, otherwise the current time.
- */
-function validTime(value) {
-  if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return value
-  return undefined
-}
-
-/**
- * Read every entry of a ZIP archive with fflate's streaming reader.
- *
- * The central directory is caller-supplied data, so every entry is bounded as
- * it is produced rather than as it is declared, and the whole archive has a
- * cumulative output budget. fflate owns the structural side (ZIP64, data
- * descriptors, malformed headers) and reports per-entry errors through the
- * file callback.
- * @param bytes - archive bytes.
- * @param name - archive label used in diagnostics.
- * @returns entry name to uncompressed bytes.
- */
-/**
- * Validate the container manifest before any Session is written.
- * A newer schema is refused rather than guessed at.
- * @param outer - container entries.
- * @returns validation result and the facts worth reporting.
- */
-function readManifest(outer) {
-  const bytes = outer.get('manifest.json')
-  if (bytes === undefined) return { ok: false, reason: 'manifest.json is missing' }
-  let value
-  try {
-    value = JSON.parse(new TextDecoder().decode(bytes))
-  } catch (error) {
-    return { ok: false, reason: `manifest.json is not valid JSON: ${messageOf(error)}` }
-  }
-  if (value === null || typeof value !== 'object') return { ok: false, reason: 'manifest.json is not an object' }
-  if (value.kind !== 'dsh-export-center/sessions') {
-    return { ok: false, reason: `unsupported archive kind: ${String(value.kind)}` }
-  }
-  if (!Number.isSafeInteger(value.schema) || value.schema < 1) {
-    return { ok: false, reason: 'manifest.json has no integer schema' }
-  }
-  if (value.schema > MANIFEST_SCHEMA) {
-    return { ok: false, reason: `archive schema ${value.schema} is newer than this plugin supports (${MANIFEST_SCHEMA})` }
-  }
-  return {
-    ok: true,
-    info: {
-      schema: value.schema,
-      exportedAt: typeof value.exportedAt === 'string' ? value.exportedAt : null,
-      sessions: Array.isArray(value.sessions) ? value.sessions.length : null,
-      tool: typeof value.tool === 'object' && value.tool !== null ? value.tool : null,
-    },
-  }
-}
-function readZip(bytes, name = 'archive') {
-  const crcByName = zipCrcMap(bytes)
-  if (crcByName === undefined) throw new Error(`${name}: missing or damaged central directory`)
-  const entries = new Map()
-  let failure
-  let total = 0
-  const unzip = new Unzip()
-  unzip.register(UnzipInflate)
-  unzip.register(UnzipPassThrough)
-  unzip.onfile = (file) => {
-    if (failure !== undefined) return
-    if (file.name.endsWith('/')) return
-    const chunks = []
-    let size = 0
-    file.ondata = (error, chunk, final) => {
-      if (failure !== undefined) return
-      if (error) {
-        failure = new Error(`${name}/${file.name}: ${messageOf(error)}`)
-        if (typeof file.terminate === 'function') file.terminate()
-        return
-      }
-      size += chunk.length
-      total += chunk.length
-      if (size > MAX_ENTRY_BYTES) {
-        failure = new Error(`${name}/${file.name}: entry exceeds ${MAX_ENTRY_BYTES} bytes`)
-        if (typeof file.terminate === 'function') file.terminate()
-        return
-      }
-      if (total > MAX_TOTAL_UNCOMPRESSED) {
-        failure = new Error(`${name}: uncompressed total exceeds ${MAX_TOTAL_UNCOMPRESSED} bytes`)
-        if (typeof file.terminate === 'function') file.terminate()
-        return
-      }
-      chunks.push(chunk)
-      if (final) {
-        const output = joinChunks(chunks, size)
-        const expected = crcByName === undefined ? undefined : crcByName.get(file.name)
-        if (expected !== undefined && crc32(output) !== expected) {
-          failure = new Error(`${name}/${file.name}: CRC mismatch`)
-          if (typeof file.terminate === 'function') file.terminate()
-          return
-        }
-        entries.set(file.name, output)
-      }
-    }
-    file.start()
-  }
-  try {
-    unzip.push(bytes, true)
-  } catch (error) {
-    throw new Error(`${name}: ${messageOf(error)}`)
-  }
-  if (failure !== undefined) throw failure
-  return entries
-}
-
-/**
- * Join byte chunks into one array.
- * @param chunks - produced chunks.
- * @param length - total byte length.
- * @returns the joined bytes.
- */
-function joinChunks(chunks, length) {
-  const out = new Uint8Array(length)
-  let offset = 0
-  for (const chunk of chunks) {
-    out.set(chunk, offset)
-    offset += chunk.length
-  }
-  return out
-}
-/** CRC-32 lookup table. */
-const CRC_TABLE = (() => {
-  const table = new Uint32Array(256)
-  for (let index = 0; index < 256; index += 1) {
-    let value = index
-    for (let bit = 0; bit < 8; bit += 1) {
-      value = (value & 1) === 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1
-    }
-    table[index] = value >>> 0
-  }
-  return table
-})()
-
-/** CRC-32 of one byte array. */
-function crc32(bytes) {
-  let value = 0xffffffff
-  for (let index = 0; index < bytes.length; index += 1) {
-    value = CRC_TABLE[(value ^ bytes[index]) & 0xff] ^ (value >>> 8)
-  }
-  return (value ^ 0xffffffff) >>> 0
-}
-
-/**
- * Read the recorded CRC-32 of every entry from the central directory.
- * fflate streams and validates the archive structure but does not expose the
- * expected checksum, so integrity is checked here.
- * @param bytes - archive bytes.
- * @returns entry name to CRC, or undefined when the directory cannot be read.
- */
-function zipCrcMap(bytes) {
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-  const end = findEndOfCentralDirectory(view, bytes.length)
-  if (end < 0) return undefined
-  const count = view.getUint16(end + 10, true)
-  let cursor = view.getUint32(end + 16, true)
-  const map = new Map()
-  for (let index = 0; index < count; index += 1) {
-    if (cursor + 46 > bytes.length || view.getUint32(cursor, true) !== 0x02014b50) return undefined
-    const expected = view.getUint32(cursor + 16, true)
-    const nameLength = view.getUint16(cursor + 28, true)
-    const extraLength = view.getUint16(cursor + 30, true)
-    const commentLength = view.getUint16(cursor + 32, true)
-    const entryName = new TextDecoder().decode(bytes.subarray(cursor + 46, cursor + 46 + nameLength))
-    map.set(entryName, expected)
-    cursor += 46 + nameLength + extraLength + commentLength
-  }
-  return map
-}
-
-/** Find the end-of-central-directory record. */
-function findEndOfCentralDirectory(view, length) {
-  const earliest = Math.max(0, length - 0xffff - 22)
-  for (let offset = length - 22; offset >= earliest; offset -= 1) {
-    if (offset >= 0 && view.getUint32(offset, true) === 0x06054b50) return offset
-  }
-  return -1
-}
 /**
  * One JSON response.
  * @param status - HTTP status.
@@ -907,15 +580,6 @@ function jsonResponse(status, value) {
     status,
     headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
   })
-}
-
-/**
- * Human-readable failure text.
- * @param error - unknown failure.
- * @returns message text.
- */
-function messageOf(error) {
-  return error instanceof Error ? error.message : String(error)
 }
 
 /* HTTP 405 for other methods is answered by the route registry itself. */
