@@ -96,8 +96,10 @@ how to restore it.
 An optional password (the field next to Export) turns the container into an
 encrypted `.dshbak` package: AES-GCM-256 with a PBKDF2-SHA-256 key (210 000
 iterations), a random 16-byte salt, and a random 12-byte IV. The file starts
-with the `DSHENC1` magic. Import detects that magic and asks for the password
-before uploading; a wrong password reports a clear failure and changes nothing.
+with the `DSHENC1` magic. The password is typed twice, can be revealed, and the
+ciphertext is decrypted once before the file is written. Import detects the
+magic and asks for the password; a wrong password reports a clear failure and
+changes nothing. A forgotten password cannot be recovered.
 
 ## Incremental export
 

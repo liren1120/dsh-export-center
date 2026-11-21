@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.1
+
+Fixes 0.6.0, which shipped a single password field.
+
+- **Password confirmation.** Export asks for the password twice, offers a
+  show-password toggle, and refuses to start unless both match; the ciphertext
+  is decrypted once before it is saved, so a package that cannot be opened is
+  never written. Forgetting the password is still irreversible, and the panel
+  says so.
+- **The tests ship.** `test/` is part of the package (`files` and release
+  archives), so `node test/run.mjs` works from an installed copy, not only from
+  the repository.
+- **Docs.** README gains the encrypted-export section; the market description
+  names the supported DSH range.
+
 ## 0.6.0
 
 Two export options the previous versions only promised.

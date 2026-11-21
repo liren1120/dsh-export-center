@@ -1,106 +1,114 @@
 {
-  "format": 1,
-  "title": {
-    "en": "Export Center",
-    "zh": "导出中心"
-  },
-  "description": {
-    "en": "Batch-export DeepSeek Harness Sessions as restorable archives and move plugin inventories between machines.",
-    "zh": "把 DeepSeek Harness 会话批量导出为可恢复归档，并在机器之间搬迁插件清单。"
-  },
-  "metadata": {
-    "categories": {},
-    "labels": {},
-    "sortKeys": {}
-  },
-  "plugins": [
-    {
-      "name": "dsh-export-center-plugin",
-      "title": {
-        "en": "Export center",
-        "zh": "导出中心"
-      },
-      "description": {
-        "en": "Restore Sessions with attachments and subagents on another machine, and carry the plugin inventory across.",
-        "zh": "在另一台机器上恢复带附件与子会话的会话，并搬迁插件清单。"
-      },
-      "icon": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCIgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByb2xlPSJpbWciIGFyaWEtbGFiZWw9IkV4cG9ydCBjZW50ZXIiPgogIDxyZWN0IHg9IjYiIHk9IjYiIHdpZHRoPSI1MiIgaGVpZ2h0PSI1MiIgcng9IjE0IiBmaWxsPSIjMWY2ZmViIi8+CiAgPHBhdGggZD0iTTMyIDE4djIwIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+CiAgPHBhdGggZD0iTTIyIDMwbDEwIDEwIDEwLTEwIiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgPHBhdGggZD0iTTE4IDQ2aDI4IiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+Cjwvc3ZnPgo=",
-      "author": "liren1120",
-      "homepage": "https://gitee.com/lirenmelodic-resonance/dsh-export-center",
-      "repository": {
-        "url": "https://gitee.com/lirenmelodic-resonance/dsh-export-center"
-      },
-      "metadata": {
-        "keywords": [
-          "export",
-          "backup",
-          "migration",
-          "sessions"
-        ],
-        "labels": []
-      },
-      "versions": [
-        {
-          "version": "0.6.0",
-          "publishTimestamp": 1795166556,
-          "source": {
-            "type": "git",
-            "url": "https://gitee.com/lirenmelodic-resonance/dsh-export-center",
-            "commit": "8d8d92d2cf3533d94a61cf658257457f7de7b768"
-          },
-          "engines": {
-            "dsh": ">=0.2.2-rc.5 <0.3.0"
-          }
-        },
-        {
-          "version": "0.5.0",
-          "publishTimestamp": 1795166252,
-          "source": {
-            "type": "git",
-            "url": "https://gitee.com/lirenmelodic-resonance/dsh-export-center",
-            "commit": "d54f9fa42f51b5aa88513ef0071b8f965343c2f6"
-          },
-          "engines": {
-            "dsh": ">=0.2.2-rc.5 <0.3.0"
-          }
-        },
-        {
-          "version": "0.4.1",
-          "publishTimestamp": 1795165534,
-          "source": {
-            "type": "git",
-            "url": "https://gitee.com/lirenmelodic-resonance/dsh-export-center",
-            "commit": "a3d9577d7f9344c796e825b93a93c29a17ab053c"
-          },
-          "engines": {
-            "dsh": ">=0.2.2-rc.5 <0.3.0"
-          }
-        },
-        {
-          "version": "0.4.0",
-          "publishTimestamp": 1795165294,
-          "source": {
-            "type": "git",
-            "url": "https://gitee.com/lirenmelodic-resonance/dsh-export-center",
-            "commit": "0f343a9ec50ba0e059ad90bba98fa1e978921fd7"
-          },
-          "engines": {
-            "dsh": ">=0.2.2-rc.5 <0.3.0"
-          }
-        },
-        {
-          "version": "0.3.2",
-          "publishTimestamp": 1795160690,
-          "source": {
-            "type": "git",
-            "url": "https://gitee.com/lirenmelodic-resonance/dsh-export-center",
-            "commit": "7ce5f3b8c9b69b5e239e18b1adcef1b7e596fbb7"
-          },
-          "engines": {
-            "dsh": ">=0.2.2-rc.5 <0.3.0"
-          }
-        }
-      ]
-    }
-  ]
+    "format":  1,
+    "title":  {
+                  "en":  "Export Center",
+                  "zh":  "导出中心"
+              },
+    "description":  {
+                        "en":  "Batch-export DeepSeek Harness Sessions as restorable archives and move plugin inventories between machines. Requires DSH 0.2.2-rc.5 to below 0.3.0.",
+                        "zh":  "把 DeepSeek Harness 会话批量导出为可恢复归档，并在机器之间搬迁插件清单。仅支持 DSH 0.2.2-rc.5 至 0.3.0 以下。"
+                    },
+    "metadata":  {
+                     "categories":  {
+
+                                    },
+                     "labels":  {
+
+                                },
+                     "sortKeys":  {
+
+                                  }
+                 },
+    "plugins":  [
+                    {
+                        "name":  "dsh-export-center-plugin",
+                        "title":  {
+                                      "en":  "Export center",
+                                      "zh":  "导出中心"
+                                  },
+                        "description":  {
+                                            "en":  "Restore Sessions with attachments and subagents on another machine, and carry the plugin inventory across. Supports DSH 0.2.2-rc.5 to below 0.3.0.",
+                                            "zh":  "在另一台机器上恢复带附件与子会话的会话，并搬迁插件清单。支持 DSH 0.2.2-rc.5 至 0.3.0 以下。"
+                                        },
+                        "icon":  "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCIgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByb2xlPSJpbWciIGFyaWEtbGFiZWw9IkV4cG9ydCBjZW50ZXIiPgogIDxyZWN0IHg9IjYiIHk9IjYiIHdpZHRoPSI1MiIgaGVpZ2h0PSI1MiIgcng9IjE0IiBmaWxsPSIjMWY2ZmViIi8+CiAgPHBhdGggZD0iTTMyIDE4djIwIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+CiAgPHBhdGggZD0iTTIyIDMwbDEwIDEwIDEwLTEwIiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgPHBhdGggZD0iTTE4IDQ2aDI4IiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+Cjwvc3ZnPgo=",
+                        "author":  "liren1120",
+                        "homepage":  "https://gitee.com/lirenmelodic-resonance/dsh-export-center",
+                        "repository":  {
+                                           "url":  "https://gitee.com/lirenmelodic-resonance/dsh-export-center"
+                                       },
+                        "metadata":  {
+                                         "keywords":  [
+                                                          "export",
+                                                          "backup",
+                                                          "migration",
+                                                          "sessions"
+                                                      ],
+                                         "labels":  [
+
+                                                    ]
+                                     },
+                        "versions":  [
+                                         {
+                                             "version":  "0.6.0",
+                                             "publishTimestamp":  1795166556,
+                                             "source":  {
+                                                            "type":  "git",
+                                                            "url":  "https://gitee.com/lirenmelodic-resonance/dsh-export-center",
+                                                            "commit":  "8d8d92d2cf3533d94a61cf658257457f7de7b768"
+                                                        },
+                                             "engines":  {
+                                                             "dsh":  "\u003e=0.2.2-rc.5 \u003c0.3.0"
+                                                         }
+                                         },
+                                         {
+                                             "version":  "0.5.0",
+                                             "publishTimestamp":  1795166252,
+                                             "source":  {
+                                                            "type":  "git",
+                                                            "url":  "https://gitee.com/lirenmelodic-resonance/dsh-export-center",
+                                                            "commit":  "d54f9fa42f51b5aa88513ef0071b8f965343c2f6"
+                                                        },
+                                             "engines":  {
+                                                             "dsh":  "\u003e=0.2.2-rc.5 \u003c0.3.0"
+                                                         }
+                                         },
+                                         {
+                                             "version":  "0.4.1",
+                                             "publishTimestamp":  1795165534,
+                                             "source":  {
+                                                            "type":  "git",
+                                                            "url":  "https://gitee.com/lirenmelodic-resonance/dsh-export-center",
+                                                            "commit":  "a3d9577d7f9344c796e825b93a93c29a17ab053c"
+                                                        },
+                                             "engines":  {
+                                                             "dsh":  "\u003e=0.2.2-rc.5 \u003c0.3.0"
+                                                         }
+                                         },
+                                         {
+                                             "version":  "0.4.0",
+                                             "publishTimestamp":  1795165294,
+                                             "source":  {
+                                                            "type":  "git",
+                                                            "url":  "https://gitee.com/lirenmelodic-resonance/dsh-export-center",
+                                                            "commit":  "0f343a9ec50ba0e059ad90bba98fa1e978921fd7"
+                                                        },
+                                             "engines":  {
+                                                             "dsh":  "\u003e=0.2.2-rc.5 \u003c0.3.0"
+                                                         }
+                                         },
+                                         {
+                                             "version":  "0.3.2",
+                                             "publishTimestamp":  1795160690,
+                                             "source":  {
+                                                            "type":  "git",
+                                                            "url":  "https://gitee.com/lirenmelodic-resonance/dsh-export-center",
+                                                            "commit":  "7ce5f3b8c9b69b5e239e18b1adcef1b7e596fbb7"
+                                                        },
+                                             "engines":  {
+                                                             "dsh":  "\u003e=0.2.2-rc.5 \u003c0.3.0"
+                                                         }
+                                         }
+                                     ]
+                    }
+                ]
 }

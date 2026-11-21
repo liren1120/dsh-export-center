@@ -7,6 +7,7 @@
  * archive reader is exercised against forged sizes, bad CRC, truncation, and
  * decompression bombs.
  */
+import { readFileSync } from 'node:fs'
 import { deflateRawSync } from 'node:zlib'
 import { apply } from '../index.js'
 
@@ -282,6 +283,16 @@ function check(name, condition, detail = '') {
   const appended = h.writes[0]?.appended ?? []
   check('inherited prefix keeps its session reference', appended[0]?.data?.sessionId === 'session-fork')
   check('own delivery marker follows the new Session', appended[2]?.data?.sessionId !== 'session-fork')
+}
+
+// 10. the package ships what its documents promise
+{
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  check('tests are part of the package', Array.isArray(pkg.files) && pkg.files.includes('test'))
+  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8')
+  check('README documents encrypted exports', readme.includes('## Encrypted exports'))
+  const index = JSON.parse(readFileSync(new URL('../market/index.json', import.meta.url), 'utf8'))
+  check('market description names the DSH range', String(index.plugins[0].description.en).includes('0.2.2-rc.5'))
 }
 
 console.log(failures === 0 ? '\nall tests passed' : `\n${failures} test(s) failed`)

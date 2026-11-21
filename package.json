@@ -1,8 +1,8 @@
 {
     "name":  "dsh-export-center-plugin",
-    "version":  "0.6.0",
+    "version":  "0.6.1",
     "type":  "module",
-    "description":  "Batch-export DeepSeek Harness Sessions as restorable archives with attachments and subagents, restore them on another machine, and move the plugin inventory.",
+    "description":  "Batch-export DeepSeek Harness Sessions as restorable archives and move plugin inventories between machines. Requires DSH 0.2.2-rc.5 or newer and below 0.3.0.",
     "license":  "MIT",
     "author":  "liren1120",
     "homepage":  "https://gitee.com/lirenmelodic-resonance/dsh-export-center",
@@ -38,7 +38,8 @@
                   "README.md",
                   "LICENSE",
                   "market",
-                  "vendor"
+                  "vendor",
+                  "test"
               ],
     "engines":  {
                     "dsh":  "\u003e=0.2.2-rc.5 \u003c0.3.0"

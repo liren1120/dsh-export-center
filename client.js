@@ -32,7 +32,7 @@ window.__ModuleLoader__.load({
      * release. The served bundle is the only file the Host guarantees it can
      * reach, so the version travels inside it rather than in a side asset.
      */
-    const BUILD_VERSION = '0.6.0'
+    const BUILD_VERSION = '0.6.1'
 
     const zh = {
       panel: '导出中心',
@@ -71,7 +71,11 @@ window.__ModuleLoader__.load({
       sessionsExport: '导出会话包',
       sessionsImport: '导入会话包',
       archiveHint: '已保存：',
-      encryptPlaceholder: '加密密码（可选，留空则不加密）',
+      encryptPlaceholder: '加密密码（可选）',
+      encryptConfirmPlaceholder: '再输入一次密码',
+      encryptMismatch: '两次输入的密码不一致，未导出',
+      encryptShow: '显示密码',
+      encryptWarning: '密码无法找回：忘记就永远打不开。请先小批量试导入一次。',
       encryptHint: '填写密码后导出为 .dshbak 加密包，导入时需要同一密码',
       passwordTitle: '这个归档已加密，请输入密码',
       passwordConfirm: '解密并导入',
@@ -207,6 +211,10 @@ window.__ModuleLoader__.load({
       sessionsImport: 'Import sessions',
       archiveHint: 'saved as:',
       encryptPlaceholder: 'Encryption password (optional)',
+      encryptConfirmPlaceholder: 'Repeat the password',
+      encryptMismatch: 'The passwords do not match; nothing was exported',
+      encryptShow: 'Show password',
+      encryptWarning: 'The password cannot be recovered. Test an import on a small batch first.',
       encryptHint: 'With a password the export becomes an encrypted .dshbak package; the same password is needed to import it',
       passwordTitle: 'This archive is encrypted; enter its password',
       passwordConfirm: 'Decrypt and import',
@@ -834,6 +842,8 @@ window.__ModuleLoader__.load({
         const [sessionMessage, setSessionMessage] = React.useState(null)
         const [restoreReport, setRestoreReport] = React.useState(null)
         const [encryptPassword, setEncryptPassword] = React.useState('')
+        const [encryptConfirm, setEncryptConfirm] = React.useState('')
+        const [showPassword, setShowPassword] = React.useState(false)
         const [incremental, setIncremental] = React.useState(false)
         const [lastExportAt, setLastExportAt] = React.useState(() => {
           try {
@@ -1206,7 +1216,20 @@ window.__ModuleLoader__.load({
         }
 
         const exportSessions = async () => {
-          const ids = Array.from(selected)
+          if (encryptPassword !== '' || encryptConfirm !== '') {
+            if (encryptPassword === '' || encryptPassword !== encryptConfirm) {
+              setSessionMessage({ kind: 'error', text: t('encryptMismatch') })
+              return
+            }
+          }
+          let ids = Array.from(selected)
+          if (incremental && lastExportAt > 0) {
+            ids = rows.filter((row) => selected.has(row.id) && row.ms > lastExportAt).map((row) => row.id)
+            if (ids.length === 0) {
+              setSessionMessage({ kind: 'info', text: t('incrementalNone') })
+              return
+            }
+          }
           if (ids.length === 0) {
             setSessionMessage({ kind: 'info', text: t('nothingSelected') })
             return
@@ -1301,6 +1324,8 @@ window.__ModuleLoader__.load({
           if (encryptPassword !== '') {
             try {
               payload = await encryptArchive(archive, encryptPassword)
+              const selfCheck = await decryptArchive(payload, encryptPassword)
+              if (selfCheck.length !== archive.length) throw new Error('encryption self-check failed')
               extension = 'dshbak'
               encrypted = true
             } catch (failure) {
@@ -1805,13 +1830,35 @@ window.__ModuleLoader__.load({
 
             h('input', {
               style: styles.input,
-              type: 'password',
+              type: showPassword ? 'text' : 'password',
               value: encryptPassword,
               placeholder: t('encryptPlaceholder'),
               title: t('encryptHint'),
               onChange: (event) => setEncryptPassword(event.target.value),
               disabled: sessionBusy !== null,
             }),
+            h('input', {
+              style: styles.input,
+              type: showPassword ? 'text' : 'password',
+              value: encryptConfirm,
+              placeholder: t('encryptConfirmPlaceholder'),
+              title: t('encryptHint'),
+              onChange: (event) => setEncryptConfirm(event.target.value),
+              disabled: sessionBusy !== null || encryptPassword === '',
+            }),
+            h('label', { style: { ...styles.row, gap: '4px' } },
+              h('input', {
+                type: 'checkbox',
+                checked: showPassword,
+                onChange: (event) => setShowPassword(event.target.checked),
+              }),
+              h('span', null, t('encryptShow'))),
+            encryptPassword !== '' && encryptConfirm !== '' && encryptPassword !== encryptConfirm
+              ? h('span', { style: styles.danger }, t('encryptMismatch'))
+              : null,
+            encryptPassword === ''
+              ? null
+              : h('span', { style: styles.hint }, t('encryptWarning')),
 
             h('input', {
               type: 'file',

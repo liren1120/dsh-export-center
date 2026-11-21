@@ -84,13 +84,22 @@ readable central directory, a CRC mismatch, or an over-limit entry fails only
 that package. Only one import runs at a time (a second answers `409`). Both
 operations can be cancelled.
 
+## Encrypted exports
+
+The optional password next to Export writes an `.dshbak` package instead of a
+plain ZIP: AES-GCM-256 with a PBKDF2-SHA-256 key (210 000 iterations), a random
+16-byte salt, a random 12-byte IV, and the `DSHENC1` magic. It must be typed
+twice, can be revealed for checking, and the ciphertext is decrypted once
+before the file is saved, so a package that cannot be opened is never written.
+Import detects the magic and asks for the password; a wrong password fails
+without uploading anything. The password cannot be recovered.
 ## Tests
 
 ```sh
 node test/run.mjs
 ```
 
-No network, no browser, no DSH: the suite builds real ZIP archives in memory
+The suite ships with the package. No network, no browser, no DSH: it builds real ZIP archives in memory
 and checks the Host half against honest input, a decompression bomb, a bad
 CRC, a truncated archive, duplicate imports, subagent depth, attachment
 fallback, and a seeded fork. A separate check extracts the encryption helpers
