@@ -48,6 +48,9 @@ Add this index URL to Discover, then install **Export center** there:
 https://raw.giteeusercontent.com/lirenmelodic-resonance/dsh-export-center/raw/master/market/index.json
 ```
 
+Step-by-step instructions for another machine (including a `git`-free path):
+[docs/INSTALL.md](docs/INSTALL.md).
+
 The market entry installs the tagged commit through `git+https://`, so the
 target machine needs `git`. A plain archive is in the releases page for a
 directory install.
