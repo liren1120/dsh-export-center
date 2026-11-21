@@ -268,14 +268,26 @@ async function restoreArchive(ctx, container, options = {}) {
       }
       const written = await writeSession(persistence, projectionCache, header, root.events, inherited)
       if (!written.ok) {
+        const rolledBack = written.created ? await removeSession(persistence, header.id) : false
         report.failed.push({
           entry: root.name,
           reason: written.reason,
-          residualSessionId: written.created ? header.id : undefined,
+          rolledBack,
+          residualSessionId: written.created && !rolledBack ? header.id : undefined,
         })
         continue
       }
       const verified = await verifySession(persistence, header.id, root.events.length)
+      if (verified.startsWith('unreadable')) {
+        const rolledBack = await removeSession(persistence, header.id)
+        report.failed.push({
+          entry: root.name,
+          reason: verified,
+          rolledBack,
+          residualSessionId: rolledBack ? undefined : header.id,
+        })
+        continue
+      }
       if (target !== undefined) {
         try {
           await target.workspace.attachSession(header.id)
@@ -390,6 +402,25 @@ function rewriteSessionRefs(events, idMap, offset = 0) {
     }
   }
   for (let index = offset; index < events.length; index += 1) walk(events[index].data)
+}
+
+/**
+ * Remove a Session this import just created, when the service supports it.
+ * @param persistence - sessionPersistence service.
+ * @param id - the Session to remove.
+ * @returns whether a removal call succeeded.
+ */
+async function removeSession(persistence, id) {
+  for (const method of ['delete', 'remove', 'deleteSession']) {
+    if (typeof persistence[method] !== 'function') continue
+    try {
+      await persistence[method](id)
+      return true
+    } catch (error) {
+      // Try the next spelling; an unsupported method is expected.
+    }
+  }
+  return false
 }
 
 /**

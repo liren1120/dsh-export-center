@@ -7,7 +7,7 @@
  * archive reader is exercised against forged sizes, bad CRC, truncation, and
  * decompression bombs.
  */
-import { mkdtempSync, readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { deflateRawSync } from 'node:zlib'
@@ -152,7 +152,12 @@ function harness(options = {}) {
           close: async () => {},
         }
       },
+      delete: async (id) => {
+        const index = writes.findIndex((header) => header.id === id)
+        if (index >= 0) writes.splice(index, 1)
+      },
       open: async (id) => {
+        if (options.verifyFails === true) throw new Error('simulated unreadable log')
         const target = writes.find((header) => header.id === id)
         const events = target === undefined ? [] : target.appended
         return {
@@ -407,6 +412,45 @@ console.log(failures === 0 ? '\nall tests passed' : `\n${failures} test(s) faile
   check('watermark advances only on a clean run', client.includes('if (failures.length === 0 && skipped.length === 0)'))
   check('password policy shipped', client.includes('encryptTooShort'))
   check('plaintext and untrusted notices shipped', client.includes('plaintextHint') && client.includes('importUntrusted'))
+}
+
+// 19. an unreadable restore is rolled back when the service can delete
+{
+  const h = harness({ verifyFails: true })
+  const { report } = await h.post('', wrapContainer([['sessions/a.zip', packageFor('session-rollback')]]))
+  check('unreadable restore reported', report.restored.length === 0 && String(report.failed[0]?.reason).startsWith('unreadable'))
+  check('unreadable restore rolled back', report.failed[0]?.rolledBack === true && h.writes.length === 0)
+}
+
+// 20. a real archive from this machine parses, when one is offered
+{
+  const real = process.env.DSH_EXPORT_CENTER_REAL_ARCHIVE
+  if (real === undefined || !existsSync(real)) {
+    console.log('skip real archive (set DSH_EXPORT_CENTER_REAL_ARCHIVE to a container)')
+  } else {
+    const h = harness()
+    const { status, report } = await h.post('', readFileSync(real))
+    check('real archive accepted', status === 200, JSON.stringify(report.failed).slice(0, 200))
+    check('real archive restores at least one Session', report.restored.length >= 1)
+    check('real archive verified', report.restored.every((item) => String(item.verify).startsWith('readable:')))
+    check('real archive manifest read', report.manifest !== null && report.manifest.schema === 2)
+  }
+}
+
+// 21. client-side spec policy for imported inventories
+{
+  const client = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  const match = client.match(/function classifySpec\(spec\) \{[\s\S]*?\n    \}/)
+  check('classifySpec shipped', match !== null)
+  if (match !== null) {
+    const classifySpec = new Function(`${match[0]}\nreturn classifySpec`)()
+    check('npm spec trusted', classifySpec('dsh-unlag@1.2.3').trust === 'known')
+    check('scoped npm spec trusted', classifySpec('@scope/name@0.1.0').trust === 'known')
+    check('gitee git spec trusted', classifySpec('git+https://gitee.com/owner/repo.git#abc').trust === 'known')
+    check('github git spec trusted', classifySpec('git+https://github.com/owner/repo').trust === 'known')
+    check('local link spec needs trust', classifySpec('link:../plugin').trust !== 'known')
+    check('plain http spec needs trust', classifySpec('http://example.com/x.tgz').trust !== 'known')
+  }
 }
 
 console.log(failures === 0 ? 'all tests passed' : `${failures} test(s) failed`)

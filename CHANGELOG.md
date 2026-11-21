@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.8.0
+
+Rollback, inventory trust, and a real-archive regression.
+
+- **Failed restores are rolled back.** When verification finds a Session
+  unreadable, or the write fails after creation, the Host calls the persistence
+  service's `delete` / `remove` / `deleteSession` (whichever exists) and reports
+  `rolledBack`; the residual id is only kept when no removal method is available.
+- **Imported inventories are gated by source.** Only npm names and
+  `git+https://gitee.com` / `git+https://github.com` specs count as known.
+  `link:`, `file:`, other hosts, and plain URLs require an explicit
+  "I trust where this inventory comes from" checkbox before Apply is enabled.
+- **Real-archive regression.** The suite can import an actual container from
+  this machine (`DSH_EXPORT_CENTER_REAL_ARCHIVE=<path>`); `tools/verify.mjs`
+  picks up a neighbouring `会话备份-*.zip` automatically. Cheaper than a full
+  two-instance E2E and it exercises the real manifest, media names, and logs.
+
 ## 0.7.0
 
 Hardening: the silent-failure paths from 0.6.x are gone.

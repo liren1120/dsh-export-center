@@ -32,7 +32,7 @@ window.__ModuleLoader__.load({
      * release. The served bundle is the only file the Host guarantees it can
      * reach, so the version travels inside it rather than in a side asset.
      */
-    const BUILD_VERSION = '0.7.0'
+    const BUILD_VERSION = '0.8.0'
 
     const zh = {
       panel: '导出中心',
@@ -80,6 +80,7 @@ window.__ModuleLoader__.load({
       plaintextHint: '未设置密码时导出为明文，包含全部对话与附件',
       importUntrusted: '归档来自外部，内容会作为会话历史被后续对话读取；只导入你信任的文件',
       inventoryUntrusted: '清单来自外部归档，安装前确认每个 spec 都来自你信任的来源',
+      inventoryTrust: '我信任这个清单的来源',
       encryptHint: '填写密码后导出为 .dshbak 加密包，导入时需要同一密码',
       passwordTitle: '这个归档已加密，请输入密码',
       passwordConfirm: '解密并导入',
@@ -223,6 +224,7 @@ window.__ModuleLoader__.load({
       plaintextHint: 'Without a password the export is plain text, including every message and attachment',
       importUntrusted: 'This archive came from outside; its content becomes Session history. Import only files you trust',
       inventoryUntrusted: 'This inventory came from an outside archive; install only specs you trust',
+      inventoryTrust: 'I trust where this inventory comes from',
       encryptHint: 'With a password the export becomes an encrypted .dshbak package; the same password is needed to import it',
       passwordTitle: 'This archive is encrypted; enter its password',
       passwordConfirm: 'Decrypt and import',
@@ -550,6 +552,22 @@ window.__ModuleLoader__.load({
       const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))
       return Array.from(digest, (value) => value.toString(16).padStart(2, '0')).join('')
     }
+    /**
+     * Classify an install spec from an imported inventory.
+     * Only npm names and the two public git hosts count as known sources;
+     * local paths and other hosts need the operator's explicit trust.
+     * @param spec - install spec text.
+     * @returns trust level and a short reason.
+     */
+    function classifySpec(spec) {
+      const value = typeof spec === 'string' ? spec.trim() : ''
+      if (value === '') return { trust: 'unknown', reason: 'no spec' }
+      if (/^git\+https:\/\/(gitee\.com|github\.com)\//i.test(value)) return { trust: 'known', reason: 'public git host' }
+      if (/^(@[a-z0-9._-]+\/)?[a-z0-9._-]+(@[^\s]+)?$/i.test(value)) return { trust: 'known', reason: 'npm package' }
+      if (/^link:/.test(value) || /^file:/.test(value)) return { trust: 'local', reason: 'local path' }
+      return { trust: 'unknown', reason: 'unrecognised source' }
+    }
+
     /** Magic prefix of an encrypted archive. */
     const ENCRYPTION_MAGIC = new TextEncoder().encode('DSHENC1')
     const ENCRYPTION_ITERATIONS = 210000
@@ -848,6 +866,7 @@ window.__ModuleLoader__.load({
         const [pluginBusy, setPluginBusy] = React.useState(null)
         const [pluginMessage, setPluginMessage] = React.useState(null)
         const [importPlan, setImportPlan] = React.useState(null)
+        const [trustInventory, setTrustInventory] = React.useState(false)
         const [importBusy, setImportBusy] = React.useState(null)
         const [importMessage, setImportMessage] = React.useState(null)
         const [importResults, setImportResults] = React.useState(null)
@@ -1154,6 +1173,7 @@ window.__ModuleLoader__.load({
             const items = buildPlan(Array.isArray(parsed.bundles) ? parsed.bundles : [], bundles)
               .map((item) => ({ ...item, checked: item.state === 'install' || item.state === 'enable' }))
             setImportPlan({ fileName: file.name, items })
+            setTrustInventory(false)
             setImportResults(null)
             setPlanExpanded(false)
             if (items.every((item) => item.state !== 'install' && item.state !== 'enable')) {
@@ -1177,6 +1197,11 @@ window.__ModuleLoader__.load({
           setImportBusy({ done: 0, total: pending.length })
           setImportMessage(null)
           setImportResults(null)
+          const needsTrust = pending.some((item) => classifySpec(item.spec).trust !== 'known')
+          if (needsTrust && !trustInventory) {
+            setImportMessage({ kind: 'error', text: t('inventoryTrust') })
+            return
+          }
           const counts = { applied: 0, restart: 0, overridden: 0, cancelled: 0, failed: 0 }
           const failedItems = []
           const tally = (item, value) => {
@@ -1568,6 +1593,7 @@ window.__ModuleLoader__.load({
         const planManual = planItems.filter((item) => item.state === 'different' || item.state === 'manual')
         const planIdle = planItems.length - planActionable.length - planManual.length
         const planPending = planActionable.filter((item) => item.checked !== false)
+        const planNeedsTrust = planPending.some((item) => classifySpec(item.spec).trust !== 'known')
         const PLAN_ROWS = 60
         const planVisible = planExpanded ? planActionable : planActionable.slice(0, PLAN_ROWS)
         const planHidden = planActionable.length - planVisible.length
@@ -1670,10 +1696,17 @@ window.__ModuleLoader__.load({
               style: styles.button,
               onClick: () => { if (pluginFileRef.current) pluginFileRef.current.click() },
             }, t('pluginsImport')),
+            planNeedsTrust ? h('label', { style: { ...styles.row, gap: '4px' } },
+              h('input', {
+                type: 'checkbox',
+                checked: trustInventory,
+                onChange: (event) => setTrustInventory(event.target.checked),
+              }),
+              h('span', null, t('inventoryTrust'))) : null,
             h('button', {
               style: styles.button,
               onClick: runPluginImport,
-              disabled: importBusy !== null || planPending.length === 0,
+              disabled: importBusy !== null || planPending.length === 0 || (planNeedsTrust && !trustInventory),
             }, importBusy === null ? t('importApply') : `${t('importImporting')} ${importBusy.done}/${importBusy.total}`),
             pluginMessage ? h('span', {
               role: 'status',

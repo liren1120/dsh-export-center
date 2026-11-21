@@ -7,7 +7,7 @@
  * documents, and the market index all agree. Exit code 1 on any mismatch.
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -49,8 +49,18 @@ if (process.env.RELEASE === '1') {
 check('market commit is pinned', typeof latest?.source?.commit === 'string' && /^[0-9a-f]{40}$/.test(latest.source.commit))
 check('market engine range stated', String(market.plugins?.[0]?.description?.en ?? '').includes('0.2.2-rc.5'))
 
+const workspace = join(root, '..', '..')
+let realArchive = process.env.DSH_EXPORT_CENTER_REAL_ARCHIVE
+if (realArchive === undefined) {
+  try {
+    const candidate = readdirSync(workspace).find((name) => /^会话备份-.*\.zip$/.test(name))
+    if (candidate !== undefined) realArchive = join(workspace, candidate)
+  } catch (error) {
+    // A checkout without a neighbouring export is normal.
+  }
+}
 try {
-  execFileSync(process.execPath, [join(root, 'test/run.mjs')], { cwd: root, stdio: 'inherit' })
+  execFileSync(process.execPath, [join(root, 'test/run.mjs')], { cwd: root, stdio: 'inherit', env: { ...process.env, ...(realArchive === undefined ? {} : { DSH_EXPORT_CENTER_REAL_ARCHIVE: realArchive }) } })
   check('host suite', true)
 } catch (error) {
   check('host suite', false, 'test/run.mjs failed')

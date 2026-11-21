@@ -112,7 +112,9 @@ from `client.js` and covers the `.dshbak` round trip and a wrong password.
   and attachment of the selected Sessions.
 - An imported archive is **untrusted input**: its text becomes Session history
   that later turns read, and its plugin inventory can request installs. Import
-  only files you trust and read the spec list before applying it.
+  only files you trust and read the spec list before applying it. Only npm
+  names and the two public git hosts are applied without a separate trust
+  checkbox.
 - The Host never edits existing logs and never writes settings or credentials.
 
 ## Upgrade from earlier builds
