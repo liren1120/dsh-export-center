@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.2.0
+
+Import becomes a two-step, previewed operation.
+
+- **Dry-run preview.** Picking an archive first asks the Host to plan it
+  (`dryRun=1`): nothing is written, and the panel shows how many Sessions would
+  be restored, their titles, and the duplicate/empty cases. Only "Restore now"
+  writes; "Cancel" discards the plan.
+- **Capabilities check.** A new `GET /api/export-center.capabilities` reports
+  whether the session store, attachment store, workspace registry and plugin
+  manager are present; the panel warns when attachments are unavailable instead
+  of failing silently in the report.
+- **The plan shares the real parser.** The same manifest gate and per-package
+  limits run during the plan, so a damaged or newer-schema archive is rejected
+  before any Session exists.
+- Docs updated for the preview step and the capabilities route.
+
 ## 1.1.0
 
 Migration bookkeeping moves to the Host, and repeated imports stop duplicating.

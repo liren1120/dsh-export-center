@@ -33,6 +33,9 @@ reproduced.
 - **Duplicate protection.** Importing an archive that this machine already
   restored is skipped by default; a "copy a duplicate anyway" option restores
   another set when that is really wanted.
+- **Preview before writing.** Picking an archive asks the Host for a dry-run plan
+  first: it lists the Sessions it would create and writes nothing until you
+  confirm.
 - **Forked Sessions.** A seeded source keeps its flag and its exact inherited
   cut, so a fork stays a fork after the round trip.
 - **Localized exports.** File names, the archive README, and the manifest

@@ -188,8 +188,10 @@ function harness(options = {}) {
   const get = routes.find((route) => route.path.endsWith('.workspaces')).fetch
   const stateRoute = routes.find((route) => route.path.endsWith('.state')).fetch
   const markerRoute = routes.find((route) => route.path.endsWith('.export-marker')).fetch
+  const capabilitiesRoute = routes.find((route) => route.path.endsWith('.capabilities')).fetch
   return {
     state: async () => (await stateRoute(new Request('http://127.0.0.1/api/export-center.state'))).json(),
+    capabilities: async () => (await capabilitiesRoute(new Request('http://127.0.0.1/api/export-center.capabilities'))).json(),
     marker: async (payload) => {
       const response = await markerRoute(new Request('http://127.0.0.1/api/export-center.export-marker', {
         method: 'POST',
@@ -431,6 +433,8 @@ console.log(failures === 0 ? '\nall tests passed' : `\n${failures} test(s) faile
   check('export marker route used', client.includes('api/export-center.export-marker'))
   check('duplicate skip notice shipped', client.includes('duplicateSkipped'))
   check('force copy option shipped', client.includes('forceCopy'))
+  check('dry-run preview shipped', client.includes('dryRun') && client.includes('renderPreview'))
+  check('capabilities warning shipped', client.includes('api/export-center.capabilities'))
 }
 
 // 19. an unreadable restore is rolled back when the service can delete
@@ -492,6 +496,18 @@ console.log(failures === 0 ? '\nall tests passed' : `\n${failures} test(s) faile
   check('repeat skipped', second.report.skipped === true && second.report.restored.length === 0)
   const third = await h.post('archiveId=dup-1&duplicate=copy', container)
   check('copy policy restores again', third.report.restored.length === 1 && third.report.duplicate === true)
+}
+
+// 24. a dry run plans without writing, and capabilities report the services
+{
+  const h = harness()
+  const container = wrapContainer([['sessions/a.zip', packageFor('session-preview', { attachments: [['media/pic.png', Buffer.from([0x89, 0x50, 0x4e, 0x47, 1])]] })]])
+  const dry = await h.post('dryRun=1&archiveId=dry-1', container)
+  check('dry run accepted', dry.status === 200 && dry.report.dryRun === true)
+  check('dry run lists Sessions', Array.isArray(dry.report.sessions) && dry.report.sessions.length === 1)
+  check('dry run writes nothing', h.writes.length === 0)
+  const caps = await h.capabilities()
+  check('capabilities report services', caps.apis.sessionPersistence === true && caps.apis.workspaceRegistry === true)
 }
 
 console.log(failures === 0 ? 'all tests passed' : `${failures} test(s) failed`)

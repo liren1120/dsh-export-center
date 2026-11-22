@@ -32,7 +32,7 @@ window.__ModuleLoader__.load({
      * release. The served bundle is the only file the Host guarantees it can
      * reach, so the version travels inside it rather than in a side asset.
      */
-    const BUILD_VERSION = '1.1.0'
+    const BUILD_VERSION = '1.2.0'
 
     const zh = {
       panel: '导出中心',
@@ -108,6 +108,17 @@ window.__ModuleLoader__.load({
       duplicateArchive: '这份文件已导入过',
       duplicateSkipped: '这个归档之前导入过，已跳过；勾选“重复导入时仍然复制”可以再导一份',
       forceCopy: '重复导入时仍然复制',
+      previewTitle: '导入预检',
+      previewBusy: '正在预检…',
+      previewSessions: '个会话待恢复',
+      previewEvents: '事件',
+      previewAttachments: '附件',
+      previewSubagents: '子会话',
+      previewDuplicate: '该归档之前导入过，默认会跳过；勾选“重复导入时仍然复制”可再导一份。',
+      previewEmpty: '没有可恢复的会话',
+      previewConfirm: '确认导入',
+      previewCancel: '取消',
+      attachmentMissing: '附件服务不可用：会话仍会恢复，但附件会失败。',
       duplicateHint: '这份归档之前已经导入过，本次又生成了一套新会话；如需避免重复，请先删除多余的那套。',
       attachmentsConverted: '无法作为图片保存、已按文件保存的附件',
       exportLanguage: '导出语言',
@@ -256,6 +267,17 @@ window.__ModuleLoader__.load({
       duplicateArchive: 'this archive was imported before',
       duplicateSkipped: 'This archive was already imported here; skipped. Tick "copy duplicates" to import another set.',
       forceCopy: 'Import a duplicate copy anyway',
+      previewTitle: 'Import preview',
+      previewBusy: 'Checking the archive…',
+      previewSessions: 'Sessions to restore',
+      previewEvents: 'events',
+      previewAttachments: 'attachments',
+      previewSubagents: 'subagents',
+      previewDuplicate: 'This archive was imported before and will be skipped; tick "copy duplicates" to import another set.',
+      previewEmpty: 'Nothing to restore',
+      previewConfirm: 'Restore now',
+      previewCancel: 'Cancel',
+      attachmentMissing: 'Attachment service unavailable: Sessions restore, attachments will fail.',
       duplicateHint: 'This archive had already been imported; this run created another set of Sessions. Delete the extra set if you did not mean to.',
       attachmentsConverted: 'attachments stored as files because the image store refused them',
       exportLanguage: 'Export language',
@@ -918,6 +940,9 @@ window.__ModuleLoader__.load({
           }
         })
         const [pendingEncrypted, setPendingEncrypted] = React.useState(null)
+        const [preview, setPreview] = React.useState(null)
+        const [previewBusy, setPreviewBusy] = React.useState(false)
+        const [capabilities, setCapabilities] = React.useState(null)
         const [pendingPassword, setPendingPassword] = React.useState('')
         const [hostReady, setHostReady] = React.useState(true)
         const [authIssue, setAuthIssue] = React.useState(false)
@@ -1002,6 +1027,18 @@ window.__ModuleLoader__.load({
           }
         }, [])
 
+        // Service-level capabilities: a missing attachment store is worth a
+        // warning before an import, not a surprise in the report.
+        const loadCapabilities = React.useCallback(async () => {
+          try {
+            const response = await fetch('api/export-center.capabilities', { headers: { accept: 'application/json' } })
+            if (!response.ok) return
+            const value = await response.json()
+            if (value !== null && typeof value === 'object') setCapabilities(value)
+          } catch (error) {
+            // Older Hosts simply have no capabilities route.
+          }
+        }, [])
         // Migration bookkeeping from the Host: the per-Session export watermark
         // and the archives already restored on this machine.
         const loadMigration = React.useCallback(async () => {
@@ -1025,8 +1062,8 @@ window.__ModuleLoader__.load({
         // The two blocks load independently: one Remote failing must not hide
         // the other block's already usable data.
         const load = React.useCallback(async () => {
-          await Promise.all([loadPlugins(), loadSessions(), loadHost(), loadMigration()])
-        }, [loadPlugins, loadSessions, loadHost, loadMigration])
+          await Promise.all([loadPlugins(), loadSessions(), loadHost(), loadMigration(), loadCapabilities()])
+        }, [loadPlugins, loadSessions, loadHost, loadMigration, loadCapabilities])
 
         React.useEffect(() => {
           load()
@@ -1550,6 +1587,43 @@ window.__ModuleLoader__.load({
         }
 
         /**
+         * Ask the Host what it would restore, without writing anything.
+         * @param bytes - plain container bytes.
+         * @param label - file name shown in the preview.
+         */
+        const previewBytes = async (bytes, label) => {
+          setPreviewBusy(true)
+          setSessionMessage(null)
+          setPreview(null)
+          try {
+            const query = new URLSearchParams()
+            query.set('dryRun', '1')
+            if (targetWorkspace !== '') query.set('workspaceId', targetWorkspace)
+            if (forceCopy) query.set('duplicate', 'copy')
+            const archiveId = await digestHex(bytes)
+            if (archiveId !== '') query.set('archiveId', archiveId)
+            const response = await fetch(`api/export-center.import?${query.toString()}`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/zip' },
+              body: bytes,
+            })
+            if (response.status === 404) throw new Error(t('hostMissing'))
+            if (response.status === 401 || response.status === 403) throw new Error(t('authFailed'))
+            const report = await response.json().catch(() => null)
+            if (report === null) throw new Error(`HTTP ${response.status}`)
+            if (Array.isArray(report.sessions) === false) throw new Error(report.error || `HTTP ${response.status}`)
+            setPreview({ bytes, name: label, report })
+          } catch (failure) {
+            setSessionMessage({
+              kind: 'error',
+              text: `${t('error')}: ${failure && failure.message ? failure.message : String(failure)}`,
+            })
+          } finally {
+            setPreviewBusy(false)
+          }
+        }
+
+        /**
          * Read a picked file; an encrypted package waits for its password.
          * @param file - the picked `.zip` or `.dshbak` archive.
          */
@@ -1575,23 +1649,60 @@ window.__ModuleLoader__.load({
             setSessionMessage(null)
             return
           }
-          await uploadArchive(bytes)
+          await previewBytes(bytes, file.name)
         }
 
-        /** Decrypt the pending archive and hand the plain bytes to the Host. */
+        /** Decrypt the pending archive, then preview the plain bytes. */
         const decryptPending = async () => {
           if (pendingEncrypted === null) return
           setSessionBusy({ done: 0, total: 1 })
           setSessionMessage(null)
           try {
             const plain = await decryptArchive(pendingEncrypted.bytes, pendingPassword)
+            const label = pendingEncrypted.name
             setPendingEncrypted(null)
             setPendingPassword('')
-            await uploadArchive(plain)
+            await previewBytes(plain, label)
           } catch (failure) {
-            setSessionBusy(null)
             setSessionMessage({ kind: 'error', text: t('wrongPassword') })
+          } finally {
+            setSessionBusy(null)
           }
+        }
+
+        /** Write the plan the user just confirmed. */
+        const confirmImport = async () => {
+          if (preview === null) return
+          const bytes = preview.bytes
+          setPreview(null)
+          await uploadArchive(bytes)
+        }
+
+        /** Drop the preview without writing anything. */
+        const cancelImport = () => {
+          setPreview(null)
+          setSessionMessage(null)
+        }        /** Compact preview of a dry-run plan. */
+        const renderPreview = () => {
+          if (preview === null) return null
+          const sessions = Array.isArray(preview.report.sessions) ? preview.report.sessions : []
+          return h('div', { style: styles.preview },
+            h('p', { style: { margin: 0, fontWeight: 600 } }, `${t('previewTitle')}: ${preview.name}`),
+            preview.report.skipped === true
+              ? h('p', { style: styles.danger }, t('previewDuplicate'))
+              : null,
+            sessions.length === 0
+              ? h('p', { style: styles.danger }, t('previewEmpty'))
+              : h('div', null,
+                h('p', { style: styles.hint }, `${sessions.length} ${t('previewSessions')}`),
+                h('p', { style: styles.hint }, sessions.slice(0, 6).map((item) => item.title || item.sourceSessionId).join(' · '))),
+            h('div', { style: { display: 'flex', gap: '8px', marginTop: '8px' } },
+              h('button', {
+                style: styles.primary,
+                onClick: confirmImport,
+                disabled: preview.report.skipped === true || sessions.length === 0,
+              }, t('previewConfirm')),
+              h('button', { style: styles.button, onClick: cancelImport }, t('previewCancel'))))
         }
 
         const onPickSessionFile = async (event) => {
@@ -1940,6 +2051,10 @@ window.__ModuleLoader__.load({
                 }, showAllFailures ? t('showLessErrors') : `${t('showAllErrors')} (${restoreReport.failed.length})`)
                 : null) : null) : null,
 
+          previewBusy ? h('p', { style: styles.status }, t('previewBusy')) : null,
+          renderPreview(),
+
+
           pendingEncrypted === null ? null : h('div', { style: styles.preview },
             h('p', { style: { margin: 0, fontWeight: 600 } }, t('passwordTitle')),
             h('p', { style: styles.hint }, pendingEncrypted.name),
@@ -2039,6 +2154,9 @@ window.__ModuleLoader__.load({
               : h('span', { style: styles.hint }, t('encryptWarning')),
 
             h('span', { style: styles.hint }, t('importUntrusted')),
+            capabilities !== null && capabilities.apis && capabilities.apis.attachmentStore === false
+              ? h('p', { style: styles.danger }, t('attachmentMissing'))
+              : null,
 
             h('label', { style: { ...styles.row, gap: '4px' } },
               h('input', {

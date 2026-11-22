@@ -112,6 +112,18 @@ page cache, switching browsers, or reinstalling DSH keeps it. The panel shows
 the last export time and reports when nothing is new; a Session enters the
 record only after a successful export, so failures are retried next time.
 
+## Import preview
+
+Picking an archive uploads it once with `dryRun=1`: the Host parses the manifest
+and every package, then answers with the Sessions it would create (title,
+events, attachments, subagents, target Workspace) and writes nothing. The panel
+shows that plan with **Restore now** and **Cancel**; only the confirmed upload
+writes. The same manifest gate and per-package limits run during the plan, so a
+damaged or newer-schema archive is rejected before any Session exists.
+
+A missing attachment store is surfaced before the import through
+`GET /api/export-center.capabilities`; the plan then still restores Sessions and
+reports attachment failures.
 ## Import integrity checks
 
 Before anything is written the container manifest must be present and name a

@@ -11,6 +11,8 @@ const WORKSPACES_PATH = '/api/export-center.workspaces';
 const STATE_PATH = '/api/export-center.state';
 /** Records a successful export so New only survives cache clears. */
 const EXPORT_MARKER_PATH = '/api/export-center.export-marker';
+/** What this Host half can actually do right now. */
+const CAPABILITIES_PATH = '/api/export-center.capabilities';
 /** Host services this bundle requires. */
 export const inject = ['connection', 'sessionPersistence', 'workspaceRegistry'];
 /**
@@ -57,6 +59,28 @@ export function apply(ctx) {
         requestBody: 'buffered',
         fetch: async (request) => recordExportMarker(request),
     }), 'export-center: export marker route');
+    ctx.effect(() => ctx.connection.fetch.register({
+        path: CAPABILITIES_PATH,
+        methods: ['GET', 'HEAD'],
+        requestBody: 'buffered',
+        fetch: async (request) => {
+            if (request.method === 'HEAD')
+                return new Response(null, { status: 200 });
+            return jsonResponse(200, {
+                apis: {
+                    sessionPersistence: ctx.sessionPersistence !== undefined && ctx.sessionPersistence !== null,
+                    attachmentStore: ctx.get('attachments') !== undefined,
+                    workspaceRegistry: ctx.workspaceRegistry !== undefined,
+                    pluginManager: ctx.remote !== undefined && ctx.remote.pluginManager !== undefined,
+                },
+                limits: {
+                    maxUploadBytes: MAX_UPLOAD_BYTES,
+                    maxSessions: MAX_SESSIONS,
+                    maxEvents: MAX_EVENTS,
+                },
+            });
+        },
+    }), 'export-center: capabilities route');
 }
 loadMigrationState();
 /** The one running import, so a second browser cannot interleave writes. */
@@ -79,6 +103,7 @@ async function importArchive(ctx, request) {
         const workspaceId = url.searchParams.get('workspaceId') || undefined;
         const archiveId = url.searchParams.get('archiveId') || undefined;
         const duplicatePolicy = url.searchParams.get('duplicate') === 'copy' ? 'copy' : 'skip';
+        const dryRun = url.searchParams.get('dryRun') === '1';
         const body = new Uint8Array(await request.arrayBuffer());
         if (body.byteLength === 0)
             return jsonResponse(400, { error: 'empty upload' });
@@ -88,14 +113,16 @@ async function importArchive(ctx, request) {
         if (archiveId !== undefined && duplicatePolicy === 'skip' && wasImported(archiveId)) {
             return jsonResponse(200, {
                 kind: 'dsh-export-center/import',
+                dryRun,
                 archiveId,
                 duplicate: true,
                 skipped: true,
                 restored: [],
+                sessions: [],
                 failed: [],
             });
         }
-        report = await restoreArchive(ctx, body, { workspaceId, archiveId, duplicatePolicy });
+        report = await restoreArchive(ctx, body, { workspaceId, archiveId, duplicatePolicy, dryRun });
     }
     catch (error) {
         return jsonResponse(500, { error: messageOf(error) });
@@ -108,6 +135,8 @@ async function importArchive(ctx, request) {
         markImported(report.archiveId, report.restored.length);
     }
     const restored = report.restored.length;
+    if (report.dryRun === true)
+        return jsonResponse(200, report);
     return jsonResponse(restored === 0 ? 422 : 200, report);
 }
 /**
@@ -150,6 +179,7 @@ async function restoreArchive(ctx, container, options = {}) {
     const manifest = readManifest(outer);
     const report = {
         kind: 'dsh-export-center/import',
+        dryRun: options.dryRun === true,
         archiveId: options.archiveId,
         duplicate: options.archiveId !== undefined && wasImported(options.archiveId),
         manifest: manifest.ok ? manifest.info : null,
@@ -196,6 +226,21 @@ async function restoreArchive(ctx, container, options = {}) {
             const targetInfo = target === undefined
                 ? null
                 : { id: target.workspace.id, path: target.workspace.path, mode: target.mode };
+            if (options.dryRun === true) {
+                report.sessions.push({
+                    entry: name,
+                    sourceSessionId: source.id,
+                    title: root.title,
+                    createdAt: validTime(source.createdAt) ?? null,
+                    cwd: source.cwd ?? null,
+                    events: root.events.length,
+                    subagents: root.children.length,
+                    attachments: root.attachments.length,
+                    seeded: source.isSeeded === true && root.seedIndex >= 0,
+                    workspace: targetInfo,
+                });
+                continue;
+            }
             // A fork carries an inherited prefix marked by `session/end-seed`; that
             // prefix keeps its original session references and is re-seeded as-is.
             const seeded = source.isSeeded === true && root.seedIndex >= 0;
