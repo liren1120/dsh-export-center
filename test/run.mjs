@@ -435,6 +435,8 @@ console.log(failures === 0 ? '\nall tests passed' : `\n${failures} test(s) faile
   check('force copy option shipped', client.includes('forceCopy'))
   check('dry-run preview shipped', client.includes('dryRun') && client.includes('renderPreview'))
   check('capabilities warning shipped', client.includes('api/export-center.capabilities'))
+  check('migration report modal shipped', client.includes('renderReportModal') && client.includes('reportLast'))
+  check('report copy and save shipped', client.includes('reportCopy') && client.includes('migration-report-'))
 }
 
 // 19. an unreadable restore is rolled back when the service can delete

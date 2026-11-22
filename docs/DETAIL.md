@@ -112,6 +112,14 @@ page cache, switching browsers, or reinstalling DSH keeps it. The panel shows
 the last export time and reports when nothing is new; a Session enters the
 record only after a successful export, so failures are retried next time.
 
+## Migration report
+
+Every import ends with a report dialog: archive name, time, duration, how many
+Sessions were restored, how many failed (with the first 50 reasons), and whether
+the archive was skipped as a duplicate. **Copy summary** puts a short text
+version on the clipboard, **Save JSON** downloads the raw Host report, and the
+panel keeps a "last import" line with **View report** so the result can be
+reopened after closing the dialog.
 ## Import preview
 
 Picking an archive uploads it once with `dryRun=1`: the Host parses the manifest

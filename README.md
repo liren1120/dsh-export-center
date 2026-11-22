@@ -36,6 +36,9 @@ reproduced.
 - **Preview before writing.** Picking an archive asks the Host for a dry-run plan
   first: it lists the Sessions it would create and writes nothing until you
   confirm.
+- **Migration report.** When an import finishes, a dialog shows what was
+  restored or failed, with copy-summary and save-JSON actions; the panel keeps a
+  "last import" line to reopen it.
 - **Forked Sessions.** A seeded source keeps its flag and its exact inherited
   cut, so a fork stays a fork after the round trip.
 - **Localized exports.** File names, the archive README, and the manifest

@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.3.0
+
+The import result becomes a readable report instead of a status line.
+
+- **Migration report modal.** When an import finishes, the panel opens a dialog
+  with the archive name, time, duration, restored/failed counts, the first 50
+  failure reasons, and three actions: **Copy summary**, **Save JSON**, **Close**.
+  Escape and a backdrop click close it; the panel keeps a "last import" line
+  with a **View report** button so the result is not lost after closing.
+- **Skipped duplicates are reported too**, not only successful restores.
+- Docs updated for the report dialog.
+
 ## 1.2.0
 
 Import becomes a two-step, previewed operation.

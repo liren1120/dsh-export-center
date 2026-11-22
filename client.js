@@ -32,7 +32,7 @@ window.__ModuleLoader__.load({
      * release. The served bundle is the only file the Host guarantees it can
      * reach, so the version travels inside it rather than in a side asset.
      */
-    const BUILD_VERSION = '1.2.0'
+    const BUILD_VERSION = '1.3.0'
 
     const zh = {
       panel: '导出中心',
@@ -118,6 +118,17 @@ window.__ModuleLoader__.load({
       previewEmpty: '没有可恢复的会话',
       previewConfirm: '确认导入',
       previewCancel: '取消',
+      reportTitle: '迁移报告',
+      reportLast: '上次导入',
+      reportOpen: '查看报告',
+      reportRestored: '成功',
+      reportFailed: '失败',
+      reportSkipped: '该归档已导入过，已跳过',
+      reportCopy: '复制摘要',
+      reportCopied: '报告摘要已复制',
+      copyFailed: '复制失败，请手动选择文本',
+      reportSave: '保存 JSON',
+      reportClose: '关闭',
       attachmentMissing: '附件服务不可用：会话仍会恢复，但附件会失败。',
       duplicateHint: '这份归档之前已经导入过，本次又生成了一套新会话；如需避免重复，请先删除多余的那套。',
       attachmentsConverted: '无法作为图片保存、已按文件保存的附件',
@@ -277,6 +288,17 @@ window.__ModuleLoader__.load({
       previewEmpty: 'Nothing to restore',
       previewConfirm: 'Restore now',
       previewCancel: 'Cancel',
+      reportTitle: 'Migration report',
+      reportLast: 'Last import',
+      reportOpen: 'View report',
+      reportRestored: 'restored',
+      reportFailed: 'failed',
+      reportSkipped: 'This archive was already imported and was skipped',
+      reportCopy: 'Copy summary',
+      reportCopied: 'Report summary copied',
+      copyFailed: 'Copy failed; select the text manually',
+      reportSave: 'Save JSON',
+      reportClose: 'Close',
       attachmentMissing: 'Attachment service unavailable: Sessions restore, attachments will fail.',
       duplicateHint: 'This archive had already been imported; this run created another set of Sessions. Delete the extra set if you did not mean to.',
       attachmentsConverted: 'attachments stored as files because the image store refused them',
@@ -884,6 +906,18 @@ window.__ModuleLoader__.load({
         height: '100%', borderRadius: '3px', transition: 'width 160ms linear',
         background: 'var(--dsw-alias-state-business-primary, #2f6feb)',
       },
+      overlay: {
+        position: 'fixed', inset: 0, zIndex: 60, padding: '24px',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'rgba(0, 0, 0, 0.45)',
+      },
+      modal: {
+        width: 'min(680px, 100%)', maxHeight: '82vh', overflow: 'auto',
+        padding: '18px 20px', borderRadius: '12px',
+        border: '1px solid var(--dsw-alias-border-l3, rgba(127,127,127,0.35))',
+        background: 'Canvas', color: 'CanvasText',
+        boxShadow: '0 12px 40px rgba(0, 0, 0, 0.35)',
+      },
     }
 
     /**
@@ -928,6 +962,8 @@ window.__ModuleLoader__.load({
         const [sessionBusy, setSessionBusy] = React.useState(null)
         const [sessionMessage, setSessionMessage] = React.useState(null)
         const [restoreReport, setRestoreReport] = React.useState(null)
+        const [reportModal, setReportModal] = React.useState(false)
+        const [lastReport, setLastReport] = React.useState(null)
         const [encryptPassword, setEncryptPassword] = React.useState('')
         const [encryptConfirm, setEncryptConfirm] = React.useState('')
         const [showPassword, setShowPassword] = React.useState(false)
@@ -1530,7 +1566,8 @@ window.__ModuleLoader__.load({
          * renders the report it answers with.
          * @param bytes - plain container archive bytes.
          */
-        const uploadArchive = async (bytes) => {
+        const uploadArchive = async (bytes, label = '') => {
+          const startedAt = Date.now()
           const controller = new AbortController()
           importAbort.current = controller
           setSessionBusy({ done: 0, total: 1 })
@@ -1556,12 +1593,16 @@ window.__ModuleLoader__.load({
             if (report.skipped === true) {
               setSessionMessage({ kind: 'info', text: t('duplicateSkipped') })
               setDuplicateWarning(true)
+              setLastReport({ name: label, at: Date.now(), durationMs: Date.now() - startedAt, report })
+              setReportModal(true)
               return
             }
             if (Array.isArray(report.restored) === false) {
               throw new Error(report.error || `HTTP ${response.status}`)
             }
             setRestoreReport(report)
+            setLastReport({ name: label, at: Date.now(), durationMs: Date.now() - startedAt, report })
+            setReportModal(true)
             setDuplicateWarning(report.duplicate === true)
             const failed = Array.isArray(report.failed) ? report.failed.length : 0
             setSessionMessage({
@@ -1674,15 +1715,18 @@ window.__ModuleLoader__.load({
         const confirmImport = async () => {
           if (preview === null) return
           const bytes = preview.bytes
+          const label = preview.name
           setPreview(null)
-          await uploadArchive(bytes)
+          await uploadArchive(bytes, label)
         }
 
         /** Drop the preview without writing anything. */
         const cancelImport = () => {
           setPreview(null)
           setSessionMessage(null)
-        }        /** Compact preview of a dry-run plan. */
+        }
+
+        /** Compact preview of a dry-run plan. */
         const renderPreview = () => {
           if (preview === null) return null
           const sessions = Array.isArray(preview.report.sessions) ? preview.report.sessions : []
@@ -1705,6 +1749,86 @@ window.__ModuleLoader__.load({
               h('button', { style: styles.button, onClick: cancelImport }, t('previewCancel'))))
         }
 
+        /** One-line report summary used by the toast and the copy button. */
+        const reportLines = () => {
+          if (lastReport === null) return []
+          const report = lastReport.report
+          const restored = Array.isArray(report.restored) ? report.restored : []
+          const failed = Array.isArray(report.failed) ? report.failed : []
+          return [
+            `${t('reportTitle')}: ${lastReport.name}`,
+            `${t('reportRestored')}: ${restored.length}`,
+            `${t('reportFailed')}: ${failed.length}`,
+            ...failed.map((item) => `- ${item.entry}: ${item.reason}`),
+          ]
+        }
+
+        /** Copy the summary to the clipboard. */
+        const copyReport = async () => {
+          const text = reportLines().join('\n')
+          try {
+            await navigator.clipboard.writeText(text)
+            setSessionMessage({ kind: 'info', text: t('reportCopied') })
+          } catch (error) {
+            setSessionMessage({ kind: 'error', text: t('copyFailed') })
+          }
+        }
+
+        /** Save the raw report as JSON through the existing download helper. */
+        const saveReport = () => {
+          if (lastReport === null) return
+          const payload = {
+            exportedAt: new Date(lastReport.at).toISOString(),
+            archive: lastReport.name,
+            durationMs: lastReport.durationMs,
+            report: lastReport.report,
+          }
+          const bytes = new TextEncoder().encode(JSON.stringify(payload, null, 2))
+          saveBinary(bytes, `migration-report-${Date.now()}.json`, 'application/json')
+        }
+
+        React.useEffect(() => {
+          if (!reportModal) return undefined
+          const onKey = (event) => { if (event.key === 'Escape') setReportModal(false) }
+          window.addEventListener('keydown', onKey)
+          return () => window.removeEventListener('keydown', onKey)
+        }, [reportModal])
+
+        /** Modal shown after an import finishes, and re-openable from the panel. */
+        const renderReportModal = () => {
+          if (lastReport === null) return null
+          const report = lastReport.report
+          const restored = Array.isArray(report.restored) ? report.restored : []
+          const failed = Array.isArray(report.failed) ? report.failed : []
+          return h('div', { style: styles.overlay, onClick: () => setReportModal(false) },
+            h('div', {
+              style: styles.modal,
+              onClick: (event) => event.stopPropagation(),
+              role: 'dialog',
+              'aria-modal': 'true',
+              'aria-label': t('reportTitle'),
+            },
+              h('h2', { style: { margin: '0 0 6px', fontSize: '16px' } }, t('reportTitle')),
+              h('p', { style: styles.hint },
+                `${lastReport.name} · ${new Date(lastReport.at).toLocaleString()} · ${Math.round(lastReport.durationMs / 1000)}s`),
+              h('p', null, report.skipped === true
+                ? t('reportSkipped')
+                : `${t('reportRestored')}: ${restored.length} · ${t('reportFailed')}: ${failed.length}`),
+              failed.length === 0
+                ? null
+                : h('div', { style: styles.list },
+                  failed.slice(0, 50).map((item, index) => h('div', {
+                    style: styles.row,
+                    key: `${item.entry}-${index}`,
+                  },
+                    h('span', { style: styles.rowTitle, title: item.entry }, item.entry),
+                    h('span', { style: { ...styles.mono, ...styles.danger } }, item.reason)))),
+              failed.length > 50 ? h('p', { style: styles.hint }, `… +${failed.length - 50}`) : null,
+              h('div', { style: { display: 'flex', gap: '8px', marginTop: '12px', justifyContent: 'flex-end' } },
+                h('button', { style: styles.button, onClick: copyReport }, t('reportCopy')),
+                h('button', { style: styles.button, onClick: saveReport }, t('reportSave')),
+                h('button', { style: styles.primary, onClick: () => setReportModal(false) }, t('reportClose')))))
+        }
         const onPickSessionFile = async (event) => {
           const input = event.target
           const file = input.files && input.files[0]
@@ -2077,6 +2201,11 @@ window.__ModuleLoader__.load({
                 disabled: sessionBusy !== null,
               }, t('passwordCancel')))),
 
+          lastReport !== null ? h('p', { style: styles.hint },
+            `${t('reportLast')}: ${t('reportRestored')} `
+              + `${Array.isArray(lastReport.report.restored) ? lastReport.report.restored.length : 0} · ${t('reportFailed')} `
+              + `${Array.isArray(lastReport.report.failed) ? lastReport.report.failed.length : 0} `,
+            h('button', { style: styles.button, onClick: () => setReportModal(true) }, t('reportOpen'))) : null,
           sessionMessage ? h('p', {
             role: 'status',
             'aria-live': 'polite',
@@ -2222,6 +2351,7 @@ window.__ModuleLoader__.load({
 
           pluginsSection(),
           sessionsSection(),
+          reportModal && lastReport !== null ? renderReportModal() : null,
         )))
       }
     }
