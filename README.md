@@ -26,8 +26,13 @@ reproduced.
 - **Encrypted exports.** An optional password writes an AES-GCM-256 `.dshbak`
   package (PBKDF2-SHA-256, 210 000 iterations, random salt and IV) instead of a
   plain ZIP; import asks for the password and refuses the wrong one.
-- **Incremental exports.** **New only** packages just the selected Sessions
-  updated after the last successful export on this machine.
+- **Incremental exports.** **New only** packages only the selected Sessions that
+  were never exported here, or changed after their own last successful export.
+  The bookkeeping lives on the Host, so clearing browser storage or switching
+  browsers does not reset it.
+- **Duplicate protection.** Importing an archive that this machine already
+  restored is skipped by default; a "copy a duplicate anyway" option restores
+  another set when that is really wanted.
 - **Forked Sessions.** A seeded source keeps its flag and its exact inherited
   cut, so a fork stays a fork after the round trip.
 - **Localized exports.** File names, the archive README, and the manifest
@@ -39,6 +44,10 @@ reproduced.
 - DeepSeek Harness `>=0.2.2-rc.5 <0.3.0`.
 - The official Session-log export row (`@deepseek-ai/dsh-session-log-export`),
   which the shipped Web bundle mounts.
+- A **full DSH restart** after installing or updating: the Host half is loaded
+  at boot, and until then the panel reports "Host not loaded".
+- A directory install must live in an **ASCII-only path** and must not be moved
+  afterwards; the profile stores that literal path as a link.
 
 ## Install
 

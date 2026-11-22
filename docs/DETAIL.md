@@ -57,9 +57,10 @@ would exceed it stops at the budget and reports the Sessions it left out.
   silently.
 - Archive images larger than the deployment's image limits are reported as
   failed attachments; files are stored verbatim with no size normalization.
-- Importing the same archive twice creates a second set of Sessions. The report
-  and the panel flag a repeat (`duplicate: true`) but do not refuse it, and the
-  memory of imported archives lasts only for the Host process.
+- Importing the same archive again is **skipped by default**: the Host keeps the
+  archive id in `migration.json` and answers `skipped: true` without writing
+  anything. Tick "import a duplicate copy anyway" to force a second set; the
+  report then carries `duplicate: true` but restores normally.
 - The import writes to the Workspace that matches the source `cwd`; a source
   directory that does not exist on this machine falls back to the first
   Workspace, and that fallback is drawn as a warning in the panel and recorded
@@ -103,11 +104,13 @@ changes nothing. A forgotten password cannot be recovered.
 
 ## Incremental export
 
-With **New only** ticked, Export keeps the Sessions of the current selection
-that were updated after the last successful export on this machine (the
-timestamp is stored in the page's local storage). The panel shows when that was
-and reports when nothing is new. The timestamp moves only after a successful
-export.
+With **New only** ticked, Export keeps only the selected Sessions that were
+never exported from this machine, or were updated after their own last
+successful export. The bookkeeping lives on the Host
+(`<dshHome>/export-center/migration.json`), not in the browser: clearing the
+page cache, switching browsers, or reinstalling DSH keeps it. The panel shows
+the last export time and reports when nothing is new; a Session enters the
+record only after a successful export, so failures are retried next time.
 
 ## Import integrity checks
 

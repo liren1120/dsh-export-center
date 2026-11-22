@@ -1,12 +1,16 @@
-import { MAX_UPLOAD_BYTES, MAX_REMEMBERED_ARCHIVES, MAX_SESSIONS, MAX_EVENTS, APPEND_BATCH, SESSION_FORMAT_VERSION } from './host/constants.js';
+import { MAX_UPLOAD_BYTES, MAX_SESSIONS, MAX_EVENTS, APPEND_BATCH, SESSION_FORMAT_VERSION } from './host/constants.js';
 import { messageOf, validTime, sessionId } from './host/util.js';
 import { readZip, readManifest } from './host/zip.js';
-import { importedArchives, loadImportedArchives, persistImportedArchives } from './host/state.js';
+import { loadMigrationState, markExported, markImported, migrationSnapshot, wasImported } from './host/state.js';
 import { restoreAttachments } from './host/attachments.js';
 /** Absolute path of the archive upload route. */
 const IMPORT_PATH = '/api/export-center.import';
 /** Absolute path of the workspace listing route. */
 const WORKSPACES_PATH = '/api/export-center.workspaces';
+/** Migration bookkeeping snapshot used by the browser. */
+const STATE_PATH = '/api/export-center.state';
+/** Records a successful export so New only survives cache clears. */
+const EXPORT_MARKER_PATH = '/api/export-center.export-marker';
 /** Host services this bundle requires. */
 export const inject = ['connection', 'sessionPersistence', 'workspaceRegistry'];
 /**
@@ -37,8 +41,24 @@ export function apply(ctx) {
             return jsonResponse(200, body);
         },
     }), 'export-center: workspaces route');
+    ctx.effect(() => ctx.connection.fetch.register({
+        path: STATE_PATH,
+        methods: ['GET', 'HEAD'],
+        requestBody: 'buffered',
+        fetch: async (request) => {
+            if (request.method === 'HEAD')
+                return new Response(null, { status: 200 });
+            return jsonResponse(200, migrationSnapshot());
+        },
+    }), 'export-center: state route');
+    ctx.effect(() => ctx.connection.fetch.register({
+        path: EXPORT_MARKER_PATH,
+        methods: ['POST'],
+        requestBody: 'buffered',
+        fetch: async (request) => recordExportMarker(request),
+    }), 'export-center: export marker route');
 }
-loadImportedArchives();
+loadMigrationState();
 /** The one running import, so a second browser cannot interleave writes. */
 let activeImport = null;
 /**
@@ -58,13 +78,24 @@ async function importArchive(ctx, request) {
         const url = new URL(request.url, 'http://export-center.invalid');
         const workspaceId = url.searchParams.get('workspaceId') || undefined;
         const archiveId = url.searchParams.get('archiveId') || undefined;
+        const duplicatePolicy = url.searchParams.get('duplicate') === 'copy' ? 'copy' : 'skip';
         const body = new Uint8Array(await request.arrayBuffer());
         if (body.byteLength === 0)
             return jsonResponse(400, { error: 'empty upload' });
         if (body.byteLength > MAX_UPLOAD_BYTES) {
             return jsonResponse(413, { error: `archive exceeds ${MAX_UPLOAD_BYTES} bytes` });
         }
-        report = await restoreArchive(ctx, body, { workspaceId, archiveId });
+        if (archiveId !== undefined && duplicatePolicy === 'skip' && wasImported(archiveId)) {
+            return jsonResponse(200, {
+                kind: 'dsh-export-center/import',
+                archiveId,
+                duplicate: true,
+                skipped: true,
+                restored: [],
+                failed: [],
+            });
+        }
+        report = await restoreArchive(ctx, body, { workspaceId, archiveId, duplicatePolicy });
     }
     catch (error) {
         return jsonResponse(500, { error: messageOf(error) });
@@ -74,15 +105,32 @@ async function importArchive(ctx, request) {
             activeImport = null;
     }
     if (report.archiveId !== undefined && report.restored.length > 0) {
-        importedArchives.set(report.archiveId, Date.now());
-        while (importedArchives.size > MAX_REMEMBERED_ARCHIVES) {
-            const oldest = importedArchives.keys().next().value;
-            importedArchives.delete(oldest);
-        }
-        persistImportedArchives();
+        markImported(report.archiveId, report.restored.length);
     }
     const restored = report.restored.length;
     return jsonResponse(restored === 0 ? 422 : 200, report);
+}
+/**
+ * Record a successful export so `New only` no longer depends on localStorage.
+ * @param request - buffered POST carrying `{ sessionIds, at? }`.
+ * @returns the new watermark and the remembered count.
+ */
+async function recordExportMarker(request) {
+    let body;
+    try {
+        body = await request.json();
+    }
+    catch (error) {
+        return jsonResponse(400, { error: 'invalid JSON body' });
+    }
+    if (body === null || typeof body !== 'object' || !Array.isArray(body.sessionIds)) {
+        return jsonResponse(400, { error: 'sessionIds array required' });
+    }
+    const ids = body.sessionIds.filter(id => typeof id === 'string' && id !== '');
+    if (ids.length > 5000)
+        return jsonResponse(413, { error: 'too many Session ids' });
+    const at = typeof body.at === 'number' && Number.isFinite(body.at) ? body.at : Date.now();
+    return jsonResponse(200, markExported(ids, at));
 }
 /**
  * Restore every Session log inside one container archive.
@@ -103,7 +151,7 @@ async function restoreArchive(ctx, container, options = {}) {
     const report = {
         kind: 'dsh-export-center/import',
         archiveId: options.archiveId,
-        duplicate: options.archiveId !== undefined && importedArchives.has(options.archiveId),
+        duplicate: options.archiveId !== undefined && wasImported(options.archiveId),
         manifest: manifest.ok ? manifest.info : null,
         restored: [],
         failed: [],

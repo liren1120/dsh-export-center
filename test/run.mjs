@@ -186,7 +186,18 @@ function harness(options = {}) {
   apply(ctx)
   const post = routes.find((route) => route.path.endsWith('.import')).fetch
   const get = routes.find((route) => route.path.endsWith('.workspaces')).fetch
+  const stateRoute = routes.find((route) => route.path.endsWith('.state')).fetch
+  const markerRoute = routes.find((route) => route.path.endsWith('.export-marker')).fetch
   return {
+    state: async () => (await stateRoute(new Request('http://127.0.0.1/api/export-center.state'))).json(),
+    marker: async (payload) => {
+      const response = await markerRoute(new Request('http://127.0.0.1/api/export-center.export-marker', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      }))
+      return { status: response.status, value: await response.json() }
+    },
     post: async (query, body) => {
       const response = await post(new Request(`http://127.0.0.1/api/export-center.import?${query}`, { method: 'POST', body }))
       return { status: response.status, report: await response.json() }
@@ -225,14 +236,16 @@ function check(name, condition, detail = '') {
   check('delivery marker names the new Session', JSON.stringify(written) !== '' && written.id !== 'session-source')
 }
 
-// 2. duplicate archive id is reported but still restored
+// 2. a repeated archive id is skipped by default; copy duplicates restores
 {
   const h = harness()
   const container = wrapContainer([['sessions/a.zip', packageFor('session-source')]])
   await h.post('archiveId=same', container)
-  const { report } = await h.post('archiveId=same', container)
-  check('duplicate flagged', report.duplicate === true)
-  check('duplicate still restored', report.restored.length === 1)
+  const second = await h.post('archiveId=same', container)
+  check('duplicate flagged', second.report.duplicate === true)
+  check('duplicate skipped', second.report.skipped === true && second.report.restored.length === 0)
+  const third = await h.post('archiveId=same&duplicate=copy', container)
+  check('copy duplicates restores', third.report.restored.length === 1)
 }
 
 // 3. decompression bomb is rejected without killing the process
@@ -389,8 +402,8 @@ console.log(failures === 0 ? '\nall tests passed' : `\n${failures} test(s) faile
   const h = harness()
   const { report } = await h.post('archiveId=archive-persisted', wrapContainer([['sessions/a.zip', packageFor('session-persist')]]))
   check('persisted import happens', report.restored.length === 1)
-  const state = JSON.parse(readFileSync(join(process.env.DSH_EXPORT_CENTER_STATE_DIR, 'imports.json'), 'utf8'))
-  check('archive id persisted', state.entries.some(([id]) => id === 'archive-persisted'))
+  const state = JSON.parse(readFileSync(join(process.env.DSH_EXPORT_CENTER_STATE_DIR, 'migration.json'), 'utf8'))
+  check('archive id persisted', state.imports['archive-persisted'] !== undefined)
 }
 
 // 18. client-side guarantees that only exist in the browser bundle
@@ -415,6 +428,9 @@ console.log(failures === 0 ? '\nall tests passed' : `\n${failures} test(s) faile
   check('install progress survives remounts', client.includes('installUi') && client.includes('progressTrack'))
   check('trusted inventories use the neutral notice', client.includes('inventoryChecked'))
   check('linked packages already present are labelled', client.includes('importStateLinkedPresent'))
+  check('export marker route used', client.includes('api/export-center.export-marker'))
+  check('duplicate skip notice shipped', client.includes('duplicateSkipped'))
+  check('force copy option shipped', client.includes('forceCopy'))
 }
 
 // 19. an unreadable restore is rolled back when the service can delete
@@ -454,6 +470,28 @@ console.log(failures === 0 ? '\nall tests passed' : `\n${failures} test(s) faile
     check('local link spec needs trust', classifySpec('link:../plugin').trust !== 'known')
     check('plain http spec needs trust', classifySpec('http://example.com/x.tgz').trust !== 'known')
   }
+}
+
+// 22. export markers persist per-Session watermarks in the Host
+{
+  const h = harness()
+  const marked = await h.marker({ sessionIds: ['session-a', 'session-b'], at: 1700000000000 })
+  check('marker accepted', marked.status === 200)
+  const state = await h.state()
+  check('marker records each Session', state.exports['session-a'] === 1700000000000)
+  check('marker advances the watermark', state.lastExportAt === 1700000000000)
+}
+
+// 23. a repeated archive is skipped by default and copied on request
+{
+  const h = harness()
+  const container = wrapContainer([['sessions/a.zip', packageFor('session-dup')]])
+  const first = await h.post('archiveId=dup-1', container)
+  check('first import restores', first.report.restored.length === 1)
+  const second = await h.post('archiveId=dup-1', container)
+  check('repeat skipped', second.report.skipped === true && second.report.restored.length === 0)
+  const third = await h.post('archiveId=dup-1&duplicate=copy', container)
+  check('copy policy restores again', third.report.restored.length === 1 && third.report.duplicate === true)
 }
 
 console.log(failures === 0 ? 'all tests passed' : `${failures} test(s) failed`)

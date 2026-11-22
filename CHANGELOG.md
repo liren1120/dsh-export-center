@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.1.0
+
+Migration bookkeeping moves to the Host, and repeated imports stop duplicating.
+
+- **Host-side migration state.** `migration.json` records every Session's last
+  successful export and every imported archive. `New only` now uses that
+  per-Session record: clearing browser storage, switching browsers, or
+  reinstalling DSH no longer resets it, and a failed Session is retried next
+  time instead of being skipped forever.
+- **Repeated archives are skipped.** Importing an archive this machine already
+  restored answers `skipped: true` and writes nothing; the panel explains it
+  and offers "import a duplicate copy anyway".
+- **Two new Host routes:** `GET /api/export-center.state` for the browser half,
+  and `POST /api/export-center.export-marker` for recording a successful export.
+  Old `imports.json` bookkeeping is folded in on first load.
+- **Docs corrected.** The outdated "duplicate memory lasts only for the Host
+  process" line is gone; incremental documentation now describes the Host
+  record, and the README/INSTALL name the full-restart and ASCII-path
+  requirements.
+
 ## 1.0.2
 
 Plugin-inventory feedback from a real second machine.

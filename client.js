@@ -32,7 +32,7 @@ window.__ModuleLoader__.load({
      * release. The served bundle is the only file the Host guarantees it can
      * reach, so the version travels inside it rather than in a side asset.
      */
-    const BUILD_VERSION = '1.0.2'
+    const BUILD_VERSION = '1.1.0'
 
     const zh = {
       panel: '导出中心',
@@ -106,6 +106,8 @@ window.__ModuleLoader__.load({
       authBanner: '本机鉴权失败：当前页面无法调用本机接口，请从本机重新打开 DSH 页面。',
       importTarget: '导入到工作区',
       duplicateArchive: '这份文件已导入过',
+      duplicateSkipped: '这个归档之前导入过，已跳过；勾选“重复导入时仍然复制”可以再导一份',
+      forceCopy: '重复导入时仍然复制',
       duplicateHint: '这份归档之前已经导入过，本次又生成了一套新会话；如需避免重复，请先删除多余的那套。',
       attachmentsConverted: '无法作为图片保存、已按文件保存的附件',
       exportLanguage: '导出语言',
@@ -252,6 +254,8 @@ window.__ModuleLoader__.load({
       authBanner: 'This page could not authenticate against the local Host. Reopen the DSH page on this machine.',
       importTarget: 'Import into workspace',
       duplicateArchive: 'this archive was imported before',
+      duplicateSkipped: 'This archive was already imported here; skipped. Tick "copy duplicates" to import another set.',
+      forceCopy: 'Import a duplicate copy anyway',
       duplicateHint: 'This archive had already been imported; this run created another set of Sessions. Delete the extra set if you did not mean to.',
       attachmentsConverted: 'attachments stored as files because the image store refused them',
       exportLanguage: 'Export language',
@@ -921,6 +925,8 @@ window.__ModuleLoader__.load({
         const [workspaces, setWorkspaces] = React.useState([])
         const [targetWorkspace, setTargetWorkspace] = React.useState('')
         const [duplicateWarning, setDuplicateWarning] = React.useState(false)
+        const [forceCopy, setForceCopy] = React.useState(false)
+        const [migration, setMigration] = React.useState({ lastExportAt: 0, exports: {}, imports: {} })
         const [showAll, setShowAll] = React.useState(false)
         const [showVersion, setShowVersion] = React.useState(false)
         const [hotRebuilt, setHotRebuilt] = React.useState(false)
@@ -996,11 +1002,31 @@ window.__ModuleLoader__.load({
           }
         }, [])
 
+        // Migration bookkeeping from the Host: the per-Session export watermark
+        // and the archives already restored on this machine.
+        const loadMigration = React.useCallback(async () => {
+          try {
+            const response = await fetch('api/export-center.state', { headers: { accept: 'application/json' } })
+            if (!response.ok) return
+            const value = await response.json()
+            if (value === null || typeof value !== 'object') return
+            const next = {
+              lastExportAt: typeof value.lastExportAt === 'number' ? value.lastExportAt : 0,
+              exports: value.exports !== null && typeof value.exports === 'object' ? value.exports : {},
+              imports: value.imports !== null && typeof value.imports === 'object' ? value.imports : {},
+            }
+            setMigration(next)
+            if (next.lastExportAt > 0) setLastExportAt(next.lastExportAt)
+          } catch (error) {
+            // The Host route may not exist yet; localStorage stays the fallback.
+          }
+        }, [])
+
         // The two blocks load independently: one Remote failing must not hide
         // the other block's already usable data.
         const load = React.useCallback(async () => {
-          await Promise.all([loadPlugins(), loadSessions(), loadHost()])
-        }, [loadPlugins, loadSessions, loadHost])
+          await Promise.all([loadPlugins(), loadSessions(), loadHost(), loadMigration()])
+        }, [loadPlugins, loadSessions, loadHost, loadMigration])
 
         React.useEffect(() => {
           load()
@@ -1294,8 +1320,13 @@ window.__ModuleLoader__.load({
             }
           }
           let ids = Array.from(selected)
-          if (incremental && lastExportAt > 0) {
-            ids = rows.filter((row) => selected.has(row.id) && row.ms > lastExportAt).map((row) => row.id)
+          if (incremental) {
+            // Per-Session bookkeeping from the Host: never exported, or updated
+            // after its last successful export. Falls back to the watermark
+            // when this Host predates the state route.
+            const exported = migration.exports ?? {}
+            ids = rows.filter((row) => selected.has(row.id)
+              && row.ms > (exported[row.id] ?? lastExportAt)).map((row) => row.id)
             if (ids.length === 0) {
               setSessionMessage({ kind: 'info', text: t('incrementalNone') })
               return
@@ -1413,12 +1444,34 @@ window.__ModuleLoader__.load({
 
           const name = saveBinary(payload, `${prefix}-${stamp}.${extension}`, encrypted ? 'application/octet-stream' : 'application/zip')
           if (failures.length === 0 && skipped.length === 0) {
+            const exportedIds = packages.map((entry) => entry.id)
+            const at = started.getTime()
+            let recorded = false
             try {
-              window.localStorage.setItem('dsh-export-center:last-export', String(started.getTime()))
+              const response = await fetch('api/export-center.export-marker', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ sessionIds: exportedIds, at }),
+              })
+              if (response.ok) {
+                recorded = true
+                setMigration((previous) => {
+                  const exports = { ...(previous.exports ?? {}) }
+                  for (const id of exportedIds) exports[id] = at
+                  return { ...previous, lastExportAt: at, exports }
+                })
+              }
             } catch (error) {
-              // Storage can be unavailable; the timestamp is a convenience only.
+              // Older Hosts have no marker route; localStorage stays a fallback.
             }
-            setLastExportAt(started.getTime())
+            if (!recorded) {
+              try {
+                window.localStorage.setItem('dsh-export-center:last-export', String(at))
+              } catch (error) {
+                // Storage can be unavailable; the timestamp is a convenience only.
+              }
+            }
+            setLastExportAt(at)
           }
           setSessionBusy(null)
           setSessionMessage({
@@ -1450,6 +1503,7 @@ window.__ModuleLoader__.load({
           try {
             const query = new URLSearchParams()
             if (targetWorkspace !== '') query.set('workspaceId', targetWorkspace)
+            if (forceCopy) query.set('duplicate', 'copy')
             const archiveId = await digestHex(bytes)
             if (archiveId !== '') query.set('archiveId', archiveId)
             const response = await fetch(`api/export-center.import?${query.toString()}`, {
@@ -1462,6 +1516,11 @@ window.__ModuleLoader__.load({
             if (response.status === 401 || response.status === 403) throw new Error(t('authFailed'))
             const report = await response.json().catch(() => null)
             if (report === null) throw new Error(`HTTP ${response.status}`)
+            if (report.skipped === true) {
+              setSessionMessage({ kind: 'info', text: t('duplicateSkipped') })
+              setDuplicateWarning(true)
+              return
+            }
             if (Array.isArray(report.restored) === false) {
               throw new Error(report.error || `HTTP ${response.status}`)
             }
@@ -1980,6 +2039,15 @@ window.__ModuleLoader__.load({
               : h('span', { style: styles.hint }, t('encryptWarning')),
 
             h('span', { style: styles.hint }, t('importUntrusted')),
+
+            h('label', { style: { ...styles.row, gap: '4px' } },
+              h('input', {
+                type: 'checkbox',
+                checked: forceCopy,
+                onChange: (event) => setForceCopy(event.target.checked),
+                disabled: sessionBusy !== null,
+              }),
+              h('span', null, t('forceCopy'))),
 
             h('input', {
               type: 'file',
