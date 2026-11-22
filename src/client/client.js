@@ -32,7 +32,7 @@ window.__ModuleLoader__.load({
      * release. The served bundle is the only file the Host guarantees it can
      * reach, so the version travels inside it rather than in a side asset.
      */
-    const BUILD_VERSION = '1.0.1'
+    const BUILD_VERSION = '1.0.2'
 
     const zh = {
       panel: '导出中心',
@@ -81,6 +81,8 @@ window.__ModuleLoader__.load({
       importUntrusted: '归档来自外部，内容会作为会话历史被后续对话读取；只导入你信任的文件',
       inventoryUntrusted: '清单来自外部归档，安装前确认每个 spec 都来自你信任的来源',
       inventoryTrust: '我信任这个清单的来源',
+      inventoryChecked: '清单已核对：npm 与公开 git 源会直接安装，本地 link 包需手动处理。',
+      importStateLinkedPresent: '本机已安装（link），可忽略',
       encryptHint: '填写密码后导出为 .dshbak 加密包，导入时需要同一密码',
       passwordTitle: '这个归档已加密，请输入密码',
       passwordConfirm: '解密并导入',
@@ -225,6 +227,8 @@ window.__ModuleLoader__.load({
       importUntrusted: 'This archive came from outside; its content becomes Session history. Import only files you trust',
       inventoryUntrusted: 'This inventory came from an outside archive; install only specs you trust',
       inventoryTrust: 'I trust where this inventory comes from',
+      inventoryChecked: 'Inventory checked: npm packages and public git sources install directly; local link entries need manual handling.',
+      importStateLinkedPresent: 'already installed here (link), nothing to do',
       encryptHint: 'With a password the export becomes an encrypted .dshbak package; the same password is needed to import it',
       passwordTitle: 'This archive is encrypted; enter its password',
       passwordConfirm: 'Decrypt and import',
@@ -846,6 +850,14 @@ window.__ModuleLoader__.load({
         background: 'rgba(127,127,127,0.06)',
       },
       danger: { color: 'var(--dsw-alias-state-error-primary, #d1493f)' },
+      progressTrack: {
+        marginTop: '10px', height: '6px', borderRadius: '3px',
+        background: 'rgba(127,127,127,0.2)', overflow: 'hidden',
+      },
+      progressFill: {
+        height: '100%', borderRadius: '3px', transition: 'width 160ms linear',
+        background: 'var(--dsw-alias-state-business-primary, #2f6feb)',
+      },
     }
 
     /**
@@ -854,6 +866,10 @@ window.__ModuleLoader__.load({
      */
     function createPage(ctx) {
       const t = ctx.locale.bind(NS)
+
+      // Lives outside the component: switching pages unmounts the panel, and a
+      // running install must keep its progress for the next mount.
+      const installUi = { busy: null, message: null, results: null, plan: null, trust: false, expanded: false }
 
       return function ExportCenter() {
         const [pluginStatus, setPluginStatus] = React.useState('loading')
@@ -865,12 +881,18 @@ window.__ModuleLoader__.load({
         const [showOfficial, setShowOfficial] = React.useState(false)
         const [pluginBusy, setPluginBusy] = React.useState(null)
         const [pluginMessage, setPluginMessage] = React.useState(null)
-        const [importPlan, setImportPlan] = React.useState(null)
-        const [trustInventory, setTrustInventory] = React.useState(false)
-        const [importBusy, setImportBusy] = React.useState(null)
-        const [importMessage, setImportMessage] = React.useState(null)
-        const [importResults, setImportResults] = React.useState(null)
-        const [planExpanded, setPlanExpanded] = React.useState(false)
+        const [importPlan, setImportPlanState] = React.useState(installUi.plan)
+        const [trustInventory, setTrustInventoryState] = React.useState(installUi.trust)
+        const [importBusy, setImportBusyState] = React.useState(installUi.busy)
+        const [importMessage, setImportMessageState] = React.useState(installUi.message)
+        const [importResults, setImportResultsState] = React.useState(installUi.results)
+        const [planExpanded, setPlanExpandedState] = React.useState(installUi.expanded)
+        const setImportPlan = (value) => { installUi.plan = value; setImportPlanState(value) }
+        const setTrustInventory = (value) => { installUi.trust = value; setTrustInventoryState(value) }
+        const setImportBusy = (value) => { installUi.busy = value; setImportBusyState(value) }
+        const setImportMessage = (value) => { installUi.message = value; setImportMessageState(value) }
+        const setImportResults = (value) => { installUi.results = value; setImportResultsState(value) }
+        const setPlanExpanded = (value) => { installUi.expanded = value; setPlanExpandedState(value) }
 
         const [sessions, setSessions] = React.useState([])
         const [query, setQuery] = React.useState('')
@@ -1542,6 +1564,15 @@ window.__ModuleLoader__.load({
           h('span', { style: styles.mono }, entry.version ? String(entry.version) : ''),
           entry.enabled === true ? h('span', { style: styles.mono }, t('bundleOn')) : null)
 
+        /**
+         * A `link:` row whose package is already here at the same version has
+         * nothing to migrate: say so instead of asking the user to move it.
+         */
+        const linkAlreadyPresent = (item) => item.state === 'manual'
+          && typeof item.spec === 'string' && item.spec.startsWith('link:')
+          && bundles.some((entry) => entry.name === item.name
+            && String(entry.version) === String(item.version))
+
         const planStateLabel = (item) => item.state === 'install'
           ? t('importStateInstall')
           : item.state === 'enable'
@@ -1554,7 +1585,9 @@ window.__ModuleLoader__.load({
                   ? t('importStateShipped')
                   : item.state === 'disabled'
                     ? t('importStateDisabled')
-                    : `${t('importStateManual')}${item.note ? ` (${item.note})` : ''}`
+                    : linkAlreadyPresent(item)
+                      ? t('importStateLinkedPresent')
+                      : `${t('importStateManual')}${item.note ? ` (${item.note})` : ''}`
 
         /** One plan row; installable and enableable rows carry a checkbox. */
         const planRow = (item) => h('label', {
@@ -1585,7 +1618,6 @@ window.__ModuleLoader__.load({
         const sourcePath = selfBundle && typeof selfBundle.source === 'string' ? selfBundle.source : ''
 
         const planItems = importPlan ? importPlan.items : []
-        const planWarning = planItems.length > 0 ? t('inventoryUntrusted') : null
         // Only rows that carry a checkbox are "actionable"; different/manual
         // rows are shown for context and counted separately.
         const planActionable = planItems.filter((item) => item.state === 'install'
@@ -1594,6 +1626,11 @@ window.__ModuleLoader__.load({
         const planIdle = planItems.length - planActionable.length - planManual.length
         const planPending = planActionable.filter((item) => item.checked !== false)
         const planNeedsTrust = planPending.some((item) => classifySpec(item.spec).trust !== 'known')
+        const planWarning = planItems.length === 0
+          ? null
+          : planNeedsTrust
+            ? { kind: 'danger', text: t('inventoryUntrusted') }
+            : { kind: 'hint', text: t('inventoryChecked') }
         const PLAN_ROWS = 60
         const planVisible = planExpanded ? planActionable : planActionable.slice(0, PLAN_ROWS)
         const planHidden = planActionable.length - planVisible.length
@@ -1646,7 +1683,9 @@ window.__ModuleLoader__.load({
           importPlan ? h('div', null,
             h('p', { style: styles.hint }, `${t('importPlan')}: ${importPlan.fileName}`
               + (planPending.length > 0 ? ` · ${planPending.length} ${t('planSelected')}` : '')),
-            planWarning === null ? null : h('p', { style: styles.danger }, planWarning),
+            planWarning === null
+              ? null
+              : h('p', { style: planWarning.kind === 'danger' ? styles.danger : styles.hint }, planWarning.text),
             planActionable.length === 0
               ? h('p', { style: styles.hint }, t('importEmpty'))
               : h('div', { style: styles.list }, planVisible.map(planRow)),
@@ -1707,7 +1746,25 @@ window.__ModuleLoader__.load({
               style: styles.button,
               onClick: runPluginImport,
               disabled: importBusy !== null || planPending.length === 0 || (planNeedsTrust && !trustInventory),
-            }, importBusy === null ? t('importApply') : `${t('importImporting')} ${importBusy.done}/${importBusy.total}`),
+            }, importBusy === null
+              ? t('importApply')
+              : `${t('importImporting')} ${importBusy.done}/${importBusy.total} · ${Math.round((importBusy.done / Math.max(1, importBusy.total)) * 100)}%`),
+            importBusy === null
+              ? null
+              : h('div', { style: { flexBasis: '100%' } },
+                h('div', {
+                  style: styles.progressTrack,
+                  role: 'progressbar',
+                  'aria-valuemin': 0,
+                  'aria-valuemax': importBusy.total,
+                  'aria-valuenow': importBusy.done,
+                },
+                  h('div', {
+                    style: {
+                      ...styles.progressFill,
+                      width: `${Math.round((importBusy.done / Math.max(1, importBusy.total)) * 100)}%`,
+                    },
+                  }))),
             pluginMessage ? h('span', {
               role: 'status',
               'aria-live': 'polite',

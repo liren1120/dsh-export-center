@@ -412,6 +412,9 @@ console.log(failures === 0 ? '\nall tests passed' : `\n${failures} test(s) faile
   check('watermark advances only on a clean run', client.includes('if (failures.length === 0 && skipped.length === 0)'))
   check('password policy shipped', client.includes('encryptTooShort'))
   check('plaintext and untrusted notices shipped', client.includes('plaintextHint') && client.includes('importUntrusted'))
+  check('install progress survives remounts', client.includes('installUi') && client.includes('progressTrack'))
+  check('trusted inventories use the neutral notice', client.includes('inventoryChecked'))
+  check('linked packages already present are labelled', client.includes('importStateLinkedPresent'))
 }
 
 // 19. an unreadable restore is rolled back when the service can delete

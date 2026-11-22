@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.2
+
+Plugin-inventory feedback from a real second machine.
+
+- **Install progress is visible and survives navigation.** The plugin section now
+  draws a progress bar with a percentage while bundles install, and its state
+  (busy, plan, results, message) lives outside the page component, so switching
+  to another page and coming back still shows the running install.
+- **The source warning matches the gate.** A plan whose specs are all npm names
+  or public git URLs shows a neutral "inventory checked" line; the red
+  "outside archive" warning and the trust checkbox appear only when a `link:`,
+  `file:`, unknown host, or plain URL is actually present.
+- **Linked packages that are already here say so.** A `link:` row whose package
+  is installed at the same version now reads "already installed here (link),
+  nothing to do" instead of asking the user to move it.
+
 ## 1.0.1
 
 Last hardening pass before the release line freezes.
