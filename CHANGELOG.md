@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.2
+
+The Chinese detail page gets its own feature image.
+
+- New `docs/preview.zh.svg`: Chinese title, subtitle, the two batch lines and
+  three Chinese step buttons, matching the English `preview.svg` layout.
+- `docs/DETAIL.zh.md` references it; the English detail keeps `preview.svg`.
+
 ## 1.3.1
 
 The plugin detail page follows the interface language.
