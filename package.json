@@ -1,71 +1,77 @@
 {
-    "name":  "dsh-export-center-plugin",
-    "version":  "1.3.3",
-    "type":  "module",
-    "description":  "Batch-export DeepSeek Harness Sessions as restorable archives and move plugin inventories between machines. Requires DSH 0.2.2-rc.5 or newer and below 0.3.0.",
-    "license":  "MIT",
-    "author":  "liren1120",
-    "homepage":  "https://gitee.com/lirenmelodic-resonance/dsh-export-center",
-    "repository":  {
-                       "type":  "git",
-                       "url":  "git+https://gitee.com/lirenmelodic-resonance/dsh-export-center.git"
-                   },
-    "keywords":  [
-                     "dsh",
-                     "dsh-plugin",
-                     "export",
-                     "backup",
-                     "migration",
-                     "sessions"
-                 ],
-    "icon":  "./icon.svg",
-    "exports":  {
-                    ".":  "./index.js",
-                    "./client":  "./client.js",
-                    "./icon":  "./icon.svg",
-                    "./version":  "./version.json",
-                    "./locale/*.json":  "./locale/*.json"
-                },
-    "files":  [
-                  "index.js",
-                  "client.js",
-                  "cordis.patch.yml",
-                  "icon.svg",
-                  "version.json",
-                  "locale/*.json",
-                  "docs",
-                  "CHANGELOG.md",
-                  "README.md",
-                  "LICENSE",
-                  "market",
-                  "vendor",
-                  "test",
-                  "host"
-              ],
-    "engines":  {
-                    "dsh":  "\u003e=0.2.2-rc.5 \u003c0.3.0"
-                },
-    "dsh":  {
-                "bundle":  {
-                               "patch":  "./cordis.patch.yml"
-                           },
-                "client":  {
-                               "platform":  "web",
-                               "immediately":  true,
-                               "inject":  [
-                                              "@deepseek-ai/dsh-client-ui-sidebar",
-                                              "@deepseek-ai/dsh-client-ui-layout"
-                                          ]
-                           }
-            },
-    "devDependencies":  {
-                            "@types/node":  "^22.20.5",
-                            "typescript":  "5.9.3"
-                        },
-    "scripts":  {
-                    "test":  "node test/run.mjs",
-                    "typecheck":  "tsc -p tsconfig.json \u0026\u0026 tsc -p tsconfig.client.json",
-                    "verify":  "node tools/verify.mjs",
-                    "build":  "node tools/build-plugin.mjs \u0026\u0026 node tools/build.mjs"
-                }
+  "name": "dsh-export-center-plugin",
+  "version": "1.3.4",
+  "type": "module",
+  "description": "Batch-export DeepSeek Harness Sessions as restorable archives and move plugin inventories between machines. Requires DSH 0.2.2-rc.5 or newer and below 0.3.0.",
+  "license": "MIT",
+  "author": "liren1120",
+  "homepage": "https://github.com/liren1120/dsh-export-center",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liren1120/dsh-export-center.git"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "export",
+    "backup",
+    "migration",
+    "sessions"
+  ],
+  "icon": "./icon.svg",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./icon": "./icon.svg",
+    "./version": "./version.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "icon.svg",
+    "version.json",
+    "locale/*.json",
+    "docs",
+    "CHANGELOG.md",
+    "README.md",
+    "LICENSE",
+    "market",
+    "vendor",
+    "test",
+    "host"
+  ],
+  "engines": {
+    "dsh": ">=0.2.2-rc.5 <0.3.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-layout"
+      ]
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "5.9.3"
+  },
+  "scripts": {
+    "test": "node test/run.mjs",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.client.json",
+    "verify": "node tools/verify.mjs",
+    "build": "node tools/build-plugin.mjs && node tools/build.mjs"
+  },
+  "bugs": {
+    "url": "https://github.com/liren1120/dsh-export-center/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }

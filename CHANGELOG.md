@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.3.4
+
+Packaging release: the npm package and the storefront fast path.
+
+- The published package now points `repository`, `homepage` and `bugs` at the
+  GitHub repository, so the curated list can link the npm package to this entry
+  automatically (no field in the entry itself).
+- `publishConfig.access` is public; the npm payload keeps docs, vendor and host
+  and drops the local market catalog and test fixtures.
+- Added `.github/workflows/publish-npm.yml`: tag-triggered publishing through a
+  Trusted Publisher (GitHub OIDC), with no long-lived npm token.
+
 ## 1.3.3
 
 Import results now remind the user to restart DSH.
