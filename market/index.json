@@ -49,6 +49,18 @@
       },
       "versions": [
         {
+          "version": "1.3.2",
+          "publishTimestamp": 1795403605,
+          "source": {
+            "type": "git",
+            "url": "https://gitee.com/lirenmelodic-resonance/dsh-export-center",
+            "commit": "8012d112423330bf60c6fdbb27212a61399df55a"
+          },
+          "engines": {
+            "dsh": ">=0.2.2-rc.5 <0.3.0"
+          }
+        },
+        {
           "version": "1.3.1",
           "publishTimestamp": 1795398686,
           "source": {
