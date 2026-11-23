@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.1
+
+The plugin detail page follows the interface language.
+
+- **Chinese detail document.** `docs/DETAIL.zh.md` is a full Chinese version of
+  the detail page, and `locale/zh.json` declares it through `meta.detail`; the
+  English locale keeps `docs/DETAIL.md`.
+- The outdated "a repeated import restores another set" paragraph in the English
+  detail was corrected to the skip-by-default behaviour.
+
 ## 1.3.0
 
 The import result becomes a readable report instead of a status line.

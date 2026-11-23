@@ -2,6 +2,6 @@
   "meta": {
     "title": "导出中心",
     "description": "侧边栏面板：把选中的会话批量导出成可恢复的会话包（含附件与子会话），在另一台机器上恢复成独立会话；插件清单同样可导出、可回装。",
-    "detail": "docs/DETAIL.md"
+    "detail": "docs/DETAIL.zh.md"
   }
 }

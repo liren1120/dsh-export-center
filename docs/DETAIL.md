@@ -47,8 +47,8 @@ would exceed it stops at the budget and reports the Sessions it left out.
    without restarting DSH — and then a banner explains it and Import is
    disabled instead of failing later with a bare HTTP status.
 6. Each archive carries an `archiveId` (the SHA-256 of the file). Importing the
-   same archive again still restores another set of Sessions, but the report and
-   the panel say it was imported before.
+   same archive again is skipped by default; tick "import a duplicate copy
+   anyway" to restore another set, which then carries `duplicate: true`.
 
 ### Limitations
 
