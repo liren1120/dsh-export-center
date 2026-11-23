@@ -437,6 +437,8 @@ console.log(failures === 0 ? '\nall tests passed' : `\n${failures} test(s) faile
   check('capabilities warning shipped', client.includes('api/export-center.capabilities'))
   check('migration report modal shipped', client.includes('renderReportModal') && client.includes('reportLast'))
   check('report copy and save shipped', client.includes('reportCopy') && client.includes('migration-report-'))
+  check('restart reminder shipped', client.includes('restartSessions') && client.includes('restartPlugins'))
+  check('plugin result modal shipped', client.includes('renderPluginReportModal'))
 }
 
 // 19. an unreadable restore is rolled back when the service can delete

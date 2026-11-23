@@ -32,7 +32,7 @@ window.__ModuleLoader__.load({
      * release. The served bundle is the only file the Host guarantees it can
      * reach, so the version travels inside it rather than in a side asset.
      */
-    const BUILD_VERSION = '1.3.2'
+    const BUILD_VERSION = '1.3.3'
 
     const zh = {
       panel: '导出中心',
@@ -129,6 +129,9 @@ window.__ModuleLoader__.load({
       copyFailed: '复制失败，请手动选择文本',
       reportSave: '保存 JSON',
       reportClose: '关闭',
+      restartSessions: '提示：新会话可能不会立即出现在会话列表里；如果看不到，请完全退出并重启 DSH 后再查看。',
+      restartPlugins: '插件已安装/启用。请完全退出并重启 DSH，新插件才会加载到 Host 和侧边栏。',
+      pluginReportTitle: '插件导入结果',
       attachmentMissing: '附件服务不可用：会话仍会恢复，但附件会失败。',
       duplicateHint: '这份归档之前已经导入过，本次又生成了一套新会话；如需避免重复，请先删除多余的那套。',
       attachmentsConverted: '无法作为图片保存、已按文件保存的附件',
@@ -299,6 +302,9 @@ window.__ModuleLoader__.load({
       copyFailed: 'Copy failed; select the text manually',
       reportSave: 'Save JSON',
       reportClose: 'Close',
+      restartSessions: 'Note: new Sessions may not appear in the list immediately; if they are missing, fully quit and restart DSH.',
+      restartPlugins: 'Plugins were installed or enabled. Fully quit and restart DSH so they load into the Host and sidebar.',
+      pluginReportTitle: 'Plugin import result',
       attachmentMissing: 'Attachment service unavailable: Sessions restore, attachments will fail.',
       duplicateHint: 'This archive had already been imported; this run created another set of Sessions. Delete the extra set if you did not mean to.',
       attachmentsConverted: 'attachments stored as files because the image store refused them',
@@ -898,6 +904,7 @@ window.__ModuleLoader__.load({
         background: 'rgba(127,127,127,0.06)',
       },
       danger: { color: 'var(--dsw-alias-state-error-primary, #d1493f)' },
+      warn: { color: 'var(--dsw-alias-state-warning-primary, #b7791f)', fontWeight: 600 },
       progressTrack: {
         marginTop: '10px', height: '6px', borderRadius: '3px',
         background: 'rgba(127,127,127,0.2)', overflow: 'hidden',
@@ -946,12 +953,16 @@ window.__ModuleLoader__.load({
         const [importBusy, setImportBusyState] = React.useState(installUi.busy)
         const [importMessage, setImportMessageState] = React.useState(installUi.message)
         const [importResults, setImportResultsState] = React.useState(installUi.results)
+        const [importRestart, setImportRestartState] = React.useState(installUi.restart)
+        const [pluginReport, setPluginReport] = React.useState(null)
+        const [pluginModal, setPluginModal] = React.useState(false)
         const [planExpanded, setPlanExpandedState] = React.useState(installUi.expanded)
         const setImportPlan = (value) => { installUi.plan = value; setImportPlanState(value) }
         const setTrustInventory = (value) => { installUi.trust = value; setTrustInventoryState(value) }
         const setImportBusy = (value) => { installUi.busy = value; setImportBusyState(value) }
         const setImportMessage = (value) => { installUi.message = value; setImportMessageState(value) }
         const setImportResults = (value) => { installUi.results = value; setImportResultsState(value) }
+        const setImportRestart = (value) => { installUi.restart = value; setImportRestartState(value) }
         const setPlanExpanded = (value) => { installUi.expanded = value; setPlanExpandedState(value) }
 
         const [sessions, setSessions] = React.useState([])
@@ -1318,6 +1329,7 @@ window.__ModuleLoader__.load({
           setImportBusy({ done: 0, total: pending.length })
           setImportMessage(null)
           setImportResults(null)
+          setImportRestart(false)
           const needsTrust = pending.some((item) => classifySpec(item.spec).trust !== 'known')
           if (needsTrust && !trustInventory) {
             setImportMessage({ kind: 'error', text: t('inventoryTrust') })
@@ -1358,6 +1370,7 @@ window.__ModuleLoader__.load({
           }
           setImportBusy(null)
           setImportResults(failedItems)
+          setImportRestart(counts.applied + counts.restart > 0)
           setImportMessage({
             kind: counts.failed > 0 ? 'error' : 'info',
             text: `${t('importDone')}: ${counts.applied} ✓ · ${counts.restart} ⟳`
@@ -1788,11 +1801,15 @@ window.__ModuleLoader__.load({
         }
 
         React.useEffect(() => {
-          if (!reportModal) return undefined
-          const onKey = (event) => { if (event.key === 'Escape') setReportModal(false) }
+          if (!reportModal && !pluginModal) return undefined
+          const onKey = (event) => {
+            if (event.key !== 'Escape') return
+            setReportModal(false)
+            setPluginModal(false)
+          }
           window.addEventListener('keydown', onKey)
           return () => window.removeEventListener('keydown', onKey)
-        }, [reportModal])
+        }, [reportModal, pluginModal])
 
         /** Modal shown after an import finishes, and re-openable from the panel. */
         const renderReportModal = () => {
@@ -1814,6 +1831,7 @@ window.__ModuleLoader__.load({
               h('p', null, report.skipped === true
                 ? t('reportSkipped')
                 : `${t('reportRestored')}: ${restored.length} · ${t('reportFailed')}: ${failed.length}`),
+              h('p', { style: styles.warn }, t('restartSessions')),
               failed.length === 0
                 ? null
                 : h('div', { style: styles.list },
@@ -1840,6 +1858,23 @@ window.__ModuleLoader__.load({
           }
         }
 
+        /** Result dialog for a plugin-inventory import, with the restart reminder. */
+        const renderPluginReportModal = () => {
+          if (pluginReport === null) return null
+          return h('div', { style: styles.overlay, onClick: () => setPluginModal(false) },
+            h('div', {
+              style: styles.modal,
+              onClick: (event) => event.stopPropagation(),
+              role: 'dialog',
+              'aria-modal': 'true',
+              'aria-label': t('pluginReportTitle'),
+            },
+              h('h2', { style: { margin: '0 0 6px', fontSize: '16px' } }, t('pluginReportTitle')),
+              h('p', null, `${t('importDone')}: ${pluginReport.applied} ✓ · ${pluginReport.restart} ⟳ · ${pluginReport.failed} ✕`),
+              h('p', { style: styles.warn }, t('restartPlugins')),
+              h('div', { style: { display: 'flex', gap: '8px', marginTop: '12px', justifyContent: 'flex-end' } },
+                h('button', { style: styles.primary, onClick: () => setPluginModal(false) }, t('reportClose')))))
+        }
         /* ---------- render ---------- */
 
         const sectionHeader = (label, hint, extra) => h('div', null,
@@ -2011,6 +2046,8 @@ window.__ModuleLoader__.load({
           importMessage ? h('p', {
             style: importMessage.kind === 'error' ? styles.danger : styles.status,
           }, importMessage.text) : null,
+
+          importRestart ? h('p', { style: styles.warn }, t('restartPlugins')) : null,
 
           h('div', { style: styles.sectionFooter },
             h('button', {
@@ -2352,6 +2389,7 @@ window.__ModuleLoader__.load({
           pluginsSection(),
           sessionsSection(),
           reportModal && lastReport !== null ? renderReportModal() : null,
+          pluginModal && pluginReport !== null ? renderPluginReportModal() : null,
         )))
       }
     }

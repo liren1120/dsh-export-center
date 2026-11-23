@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.3.3
+
+Import results now remind the user to restart DSH.
+
+- **Session migration report** gains a restart note: restored Sessions may not
+  appear in the list until the client reloads, so the dialog says to fully quit
+  and restart DSH when they are missing.
+- **Plugin inventory import** ends with its own result dialog (applied,
+  restart-required, failed) plus a prominent reminder that installed or enabled
+  plugin bundles only load into the Host and sidebar after a full DSH restart.
+  The inline warning stays in the panel for later reference.
+
 ## 1.3.2
 
 The Chinese detail page gets its own feature image.
